@@ -1,0 +1,42 @@
+\begin{table}[t]
+\centering
+\small
+\begin{tabular}{lrrrrrrr}
+\toprule
+Program & Instance & Arch & Structure & Clean acc. & min IIT acc. & Strict acc. & Gate \\
+\midrule
+frac\_prevs & src & M1 & plain & 1.000 & 1.000 & 1.000 & yes \\
+frac\_prevs & dst\_shared & M2 & permuted & 1.000 & 1.000 & 1.000 & yes \\
+frac\_prevs & dst\_split\_redundant & M3 & split\_redundant & 1.000 & 1.000 & 1.000 & yes \\
+frac\_prevs & dst\_merged & M2 & merged & 1.000 & 1.000 & 1.000 & yes \\
+frac\_prevs & dst\_absent & M3 & absent & 1.000 & 1.000 & 1.000 & yes \\
+running\_max & src & M1 & plain & 1.000 & 1.000 & 1.000 & yes \\
+running\_max & dst\_shared & M2 & permuted & 1.000 & 1.000 & 1.000 & yes \\
+running\_max & dst\_split\_redundant & M3 & split\_redundant & 1.000 & 1.000 & 1.000 & yes \\
+running\_max & dst\_merged & M2 & merged & 1.000 & 1.000 & 1.000 & yes \\
+running\_max & dst\_absent & M3 & absent & 1.000 & 1.000 & 1.000 & yes \\
+token\_hist & src & M1 & plain & 1.000 & 1.000 & 1.000 & yes \\
+token\_hist & dst\_shared & M2 & permuted & 1.000 & 1.000 & 1.000 & yes \\
+token\_hist & dst\_split\_redundant & M3 & split\_redundant & 1.000 & 1.000 & 1.000 & yes \\
+token\_hist & dst\_merged & M2 & merged & 1.000 & 1.000 & 1.000 & yes \\
+token\_hist & dst\_absent & M3 & absent & 1.000 & 1.000 & 1.000 & yes \\
+dyck1\_balance & src & M1 & plain & 1.000 & 1.000 & 1.000 & yes \\
+dyck1\_balance & dst\_shared & M2 & permuted & 1.000 & 1.000 & 1.000 & yes \\
+dyck1\_balance & dst\_split\_redundant & M3 & split\_redundant & 1.000 & 1.000 & 1.000 & yes \\
+dyck1\_balance & dst\_merged & M2 & merged & 1.000 & 1.000 & 1.000 & yes \\
+dyck1\_balance & dst\_absent & M3 & absent & 1.000 & 1.000 & 1.000 & yes \\
+sort\_key & src & M1 & plain & 1.000 & 1.000 & 1.000 & yes \\
+sort\_key & dst\_shared & M2 & permuted & 1.000 & 1.000 & 1.000 & yes \\
+sort\_key & dst\_split\_redundant & M3 & split\_redundant & 1.000 & 1.000 & 1.000 & yes \\
+sort\_key & dst\_merged & M2 & merged & 1.000 & 1.000 & 1.000 & yes \\
+sort\_key & dst\_absent & M3 & absent & 1.000 & 1.000 & 1.000 & yes \\
+induction\_copy & src & M1 & plain & 1.000 & 1.000 & 0.999 & yes \\
+induction\_copy & dst\_shared & M2 & permuted & 1.000 & 0.969 & 0.993 & yes \\
+induction\_copy & dst\_split\_redundant & M3 & split\_redundant & 1.000 & 0.991 & 1.000 & yes \\
+induction\_copy & dst\_merged & M2 & merged & 1.000 & 0.989 & 0.998 & yes \\
+induction\_copy & dst\_absent & M3 & absent & 1.000 & 1.000 & 1.000 & yes \\
+\bottomrule
+\end{tabular}
+\caption{Planted benchmark validity. Clean accuracy, worst-case interchange accuracy over planted groups, and strict-localisation accuracy. The planted causal graph is only usable as ground truth where all three are high.}
+\label{tab:benchmark_validity}
+\end{table}

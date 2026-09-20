@@ -1,0 +1,20 @@
+\begin{table}[t]
+\centering
+\small
+\begin{tabular}{lrrrr}
+\toprule
+Validation rule & wrong variable & effect-matched random & absent & split half \\
+\midrule
+representational & 0.044 & 0.019 & 0.000 & 0.250 \\
+round\_trip\_only & 0.810 & 0.624 & 0.857 & 0.690 \\
+forward\_only & 0.904 & 0.963 & 0.000 & 0.917 \\
+scalar\_ccc & 0.737 & 0.606 & 0.000 & 0.619 \\
+ccc\_ind & 0.731 & 0.566 & 0.000 & 0.631 \\
+ccc\_shape & 0.350 & 0.130 & 0.000 & 0.226 \\
+ccc\_sig & 0.233 & 0.000 & 0.000 & 0.143 \\
+pairwise\_ccc\_plus & 0.180 & 0.000 & 0.000 & 0.155 \\
+\bottomrule
+\end{tabular}
+\caption{False acceptance by kind of negative. The negative classes are not equally hard: an absent mechanism has no causal effect at all, whereas an effect-matched random subspace is built to survive a mean-effect test.}
+\label{tab:fa_by_negative_case}
+\end{table}

@@ -1,0 +1,34 @@
+{
+  "corpus": {
+    "source": "synthetic",
+    "n_documents": 2000,
+    "warning": "not natural text; translator quality will be understated"
+  },
+  "stores": {
+    "pythia": {
+      "repo": "EleutherAI/pythia-160m-deduped",
+      "n_rows": 8000,
+      "n_sites": 6,
+      "d_model": 64,
+      "n_layers": 3,
+      "seconds": 3.2
+    },
+    "gpt2": {
+      "repo": "gpt2",
+      "n_rows": 8000,
+      "n_sites": 6,
+      "d_model": 64,
+      "n_layers": 3,
+      "seconds": 1.5
+    },
+    "llama": {
+      "repo": "HuggingFaceTB/SmolLM2-135M",
+      "n_rows": 8000,
+      "n_sites": 6,
+      "d_model": 64,
+      "n_layers": 3,
+      "seconds": 1.7
+    }
+  },
+  "_manifest_hash": "e5c891d9f85101e4"
+}

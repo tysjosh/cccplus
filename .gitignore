@@ -1,0 +1,76 @@
+# ---------------------------------------------------------------- Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments. The interpreter this repo is run with lives outside the
+# tree (see README), but keep these so a local venv is never committed.
+.venv/
+venv/
+env/
+
+# ------------------------------------------------------------------ OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+*~
+.idea/
+.vscode/
+
+# -------------------------------------------------------------- credentials
+# The natural-model stage authenticates against gated Hugging Face repos.
+.env
+*.env
+.hf_token
+hf_token*
+**/token.json
+credentials.json
+
+# ------------------------------------------------------------------ run logs
+logs/
+*.log
+
+# ------------------------------------------------------------- paper source
+# The paper being reproduced is not redistributed from this repository. Both the
+# PDF and its extracted text are kept locally and deliberately untracked; nothing
+# under cccplus/, experiments/ or tests/ reads either of them.
+Cycle_Consistent_Translation_for_Cross_Model_Mechanism_Comparison.pdf
+paper.txt
+*.pdf
+
+# ================================================================= artifacts
+# Two rules, for two different reasons.
+
+# 1. Caches: ~1 GB of torch tensors. Regenerable — the translator cache is refit by
+#    run_controlled.py (about 26 min cold), the SIIT checkpoints by
+#    train_controlled.py (about 59 min, and resumable). Never commit these: a
+#    silently-rewritten translator cache has already produced inconsistent numbers
+#    once in this project's history, and versioning it would hide that rather than
+#    surface it.
+results/cache/
+
+# 2. Per-path measurement dumps: ~18.6 MB of the ~19.6 MB of JSON in results/, and
+#    rewritten in full on every run. Committing them would add ~19 MB to history per
+#    regeneration. They are raw intermediates: every reported number is derived from
+#    them into results/*analysis*.json, which IS tracked. To share them for
+#    re-analysis without re-running, attach them to a release rather than a commit.
+results/*_paths*.json
+
+# Hugging Face / datasets caches, if anyone points them at the tree
+.cache/
+huggingface/
+
+# ================================================================= kept on purpose
+# Tracked, because these are the results and their provenance:
+#   results/controlled_analysis*.json        per-rule metrics, contrasts, bounds
+#   results/controlled_benchmark_models.json the SIIT gate and the retry ladder
+#   results/multisite_results.json           Sec. 3.7 extension
+#   results/natural_*_tiny.json              self-test output; see the README warning
+#   results/tables/                          the emitted Markdown and LaTeX tables
+#   manifest/manifest.yaml                   the frozen config every result is hashed to

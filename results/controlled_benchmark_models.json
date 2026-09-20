@@ -1,0 +1,1505 @@
+{
+  "frac_prevs": {
+    "src": {
+      "arch": "M1",
+      "structure": "plain",
+      "clean_accuracy": 1.0,
+      "min_iit_accuracy": 1.0,
+      "mean_strict_accuracy": 1.0,
+      "iit_accuracy": {
+        "plain:v0:L1.mlp_out@final": 1.0,
+        "plain:v1:L0.mlp_out@final": 1.0,
+        "plain:v2:L1.attn_out@final": 1.0
+      },
+      "placement": {
+        "structure": "plain",
+        "absent_vars": [],
+        "blocks": [
+          {
+            "site": "L1.mlp_out@final",
+            "rank": 4,
+            "vars": [
+              0
+            ],
+            "tag": "plain"
+          },
+          {
+            "site": "L0.mlp_out@final",
+            "rank": 4,
+            "vars": [
+              1
+            ],
+            "tag": "plain"
+          },
+          {
+            "site": "L1.attn_out@final",
+            "rank": 4,
+            "vars": [
+              2
+            ],
+            "tag": "plain"
+          }
+        ]
+      },
+      "attempts": [],
+      "meets_gate": true
+    },
+    "dst_shared": {
+      "arch": "M2",
+      "structure": "permuted",
+      "clean_accuracy": 1.0,
+      "min_iit_accuracy": 1.0,
+      "mean_strict_accuracy": 1.0,
+      "iit_accuracy": {
+        "plain:v1:L1.attn_out@final": 1.0,
+        "plain:v2:L0.mlp_out@final": 1.0,
+        "plain:v0:L0.mlp_out@final": 1.0
+      },
+      "placement": {
+        "structure": "permuted",
+        "absent_vars": [],
+        "blocks": [
+          {
+            "site": "L1.attn_out@final",
+            "rank": 4,
+            "vars": [
+              1
+            ],
+            "tag": "plain"
+          },
+          {
+            "site": "L0.mlp_out@final",
+            "rank": 4,
+            "vars": [
+              2
+            ],
+            "tag": "plain"
+          },
+          {
+            "site": "L0.mlp_out@final",
+            "rank": 4,
+            "vars": [
+              0
+            ],
+            "tag": "plain"
+          }
+        ]
+      },
+      "attempts": [],
+      "meets_gate": true
+    },
+    "dst_split_redundant": {
+      "arch": "M3",
+      "structure": "split_redundant",
+      "clean_accuracy": 1.0,
+      "min_iit_accuracy": 1.0,
+      "mean_strict_accuracy": 1.0,
+      "iit_accuracy": {
+        "split:v0:L1.attn_out@final|L0.mlp_out@final": 1.0,
+        "redundant:v1:L1.mlp_out@final": 1.0,
+        "redundant:v1:L2.mlp_out@final": 1.0,
+        "redundant_joint:v1:L1.mlp_out@final|L2.mlp_out@final": 1.0,
+        "plain:v2:L2.attn_out@final": 1.0
+      },
+      "placement": {
+        "structure": "split_redundant",
+        "absent_vars": [],
+        "blocks": [
+          {
+            "site": "L1.attn_out@final",
+            "rank": 2,
+            "vars": [
+              0
+            ],
+            "tag": "split"
+          },
+          {
+            "site": "L0.mlp_out@final",
+            "rank": 2,
+            "vars": [
+              0
+            ],
+            "tag": "split"
+          },
+          {
+            "site": "L1.mlp_out@final",
+            "rank": 4,
+            "vars": [
+              1
+            ],
+            "tag": "redundant"
+          },
+          {
+            "site": "L2.mlp_out@final",
+            "rank": 4,
+            "vars": [
+              1
+            ],
+            "tag": "redundant"
+          },
+          {
+            "site": "L2.attn_out@final",
+            "rank": 4,
+            "vars": [
+              2
+            ],
+            "tag": "plain"
+          }
+        ]
+      },
+      "attempts": [],
+      "meets_gate": true
+    },
+    "dst_merged": {
+      "arch": "M2",
+      "structure": "merged",
+      "clean_accuracy": 1.0,
+      "min_iit_accuracy": 1.0,
+      "mean_strict_accuracy": 1.0,
+      "iit_accuracy": {
+        "plain:v0:L1.attn_out@final": 1.0,
+        "merged:v1+v2:L0.mlp_out@final": 1.0
+      },
+      "placement": {
+        "structure": "merged",
+        "absent_vars": [],
+        "blocks": [
+          {
+            "site": "L1.attn_out@final",
+            "rank": 4,
+            "vars": [
+              0
+            ],
+            "tag": "plain"
+          },
+          {
+            "site": "L0.mlp_out@final",
+            "rank": 4,
+            "vars": [
+              1,
+              2
+            ],
+            "tag": "merged"
+          }
+        ]
+      },
+      "attempts": [],
+      "meets_gate": true
+    },
+    "dst_absent": {
+      "arch": "M3",
+      "structure": "absent",
+      "clean_accuracy": 1.0,
+      "min_iit_accuracy": 1.0,
+      "mean_strict_accuracy": 1.0,
+      "iit_accuracy": {
+        "plain:v0:L0.mlp_out@final": 1.0,
+        "plain:v1:L1.mlp_out@final": 1.0
+      },
+      "placement": {
+        "structure": "absent",
+        "absent_vars": [
+          2
+        ],
+        "blocks": [
+          {
+            "site": "L0.mlp_out@final",
+            "rank": 4,
+            "vars": [
+              0
+            ],
+            "tag": "plain"
+          },
+          {
+            "site": "L1.mlp_out@final",
+            "rank": 4,
+            "vars": [
+              1
+            ],
+            "tag": "plain"
+          }
+        ]
+      },
+      "attempts": [],
+      "meets_gate": true
+    }
+  },
+  "running_max": {
+    "src": {
+      "arch": "M1",
+      "structure": "plain",
+      "clean_accuracy": 1.0,
+      "min_iit_accuracy": 1.0,
+      "mean_strict_accuracy": 1.0,
+      "iit_accuracy": {
+        "plain:v0:L0.mlp_out@final": 1.0,
+        "plain:v1:L1.attn_out@final": 1.0,
+        "plain:v2:L1.mlp_out@final": 1.0
+      },
+      "placement": {
+        "structure": "plain",
+        "absent_vars": [],
+        "blocks": [
+          {
+            "site": "L0.mlp_out@final",
+            "rank": 4,
+            "vars": [
+              0
+            ],
+            "tag": "plain"
+          },
+          {
+            "site": "L1.attn_out@final",
+            "rank": 4,
+            "vars": [
+              1
+            ],
+            "tag": "plain"
+          },
+          {
+            "site": "L1.mlp_out@final",
+            "rank": 4,
+            "vars": [
+              2
+            ],
+            "tag": "plain"
+          }
+        ]
+      },
+      "attempts": [],
+      "meets_gate": true
+    },
+    "dst_shared": {
+      "arch": "M2",
+      "structure": "permuted",
+      "clean_accuracy": 1.0,
+      "min_iit_accuracy": 1.0,
+      "mean_strict_accuracy": 1.0,
+      "iit_accuracy": {
+        "plain:v0:L0.mlp_out@final": 1.0,
+        "plain:v1:L1.attn_out@final": 1.0,
+        "plain:v2:L0.mlp_out@final": 1.0
+      },
+      "placement": {
+        "structure": "permuted",
+        "absent_vars": [],
+        "blocks": [
+          {
+            "site": "L0.mlp_out@final",
+            "rank": 4,
+            "vars": [
+              0
+            ],
+            "tag": "plain"
+          },
+          {
+            "site": "L1.attn_out@final",
+            "rank": 4,
+            "vars": [
+              1
+            ],
+            "tag": "plain"
+          },
+          {
+            "site": "L0.mlp_out@final",
+            "rank": 4,
+            "vars": [
+              2
+            ],
+            "tag": "plain"
+          }
+        ]
+      },
+      "attempts": [],
+      "meets_gate": true
+    },
+    "dst_split_redundant": {
+      "arch": "M3",
+      "structure": "split_redundant",
+      "clean_accuracy": 1.0,
+      "min_iit_accuracy": 1.0,
+      "mean_strict_accuracy": 1.0,
+      "iit_accuracy": {
+        "split:v0:L2.mlp_out@final|L1.mlp_out@final": 1.0,
+        "redundant:v1:L2.attn_out@final": 1.0,
+        "redundant:v1:L1.attn_out@final": 1.0,
+        "redundant_joint:v1:L2.attn_out@final|L1.attn_out@final": 1.0,
+        "plain:v2:L0.mlp_out@final": 1.0
+      },
+      "placement": {
+        "structure": "split_redundant",
+        "absent_vars": [],
+        "blocks": [
+          {
+            "site": "L2.mlp_out@final",
+            "rank": 2,
+            "vars": [
+              0
+            ],
+            "tag": "split"
+          },
+          {
+            "site": "L1.mlp_out@final",
+            "rank": 2,
+            "vars": [
+              0
+            ],
+            "tag": "split"
+          },
+          {
+            "site": "L2.attn_out@final",
+            "rank": 4,
+            "vars": [
+              1
+            ],
+            "tag": "redundant"
+          },
+          {
+            "site": "L1.attn_out@final",
+            "rank": 4,
+            "vars": [
+              1
+            ],
+            "tag": "redundant"
+          },
+          {
+            "site": "L0.mlp_out@final",
+            "rank": 4,
+            "vars": [
+              2
+            ],
+            "tag": "plain"
+          }
+        ]
+      },
+      "attempts": [],
+      "meets_gate": true
+    },
+    "dst_merged": {
+      "arch": "M2",
+      "structure": "merged",
+      "clean_accuracy": 1.0,
+      "min_iit_accuracy": 1.0,
+      "mean_strict_accuracy": 1.0,
+      "iit_accuracy": {
+        "plain:v0:L0.mlp_out@final": 1.0,
+        "merged:v1+v2:L1.attn_out@final": 1.0
+      },
+      "placement": {
+        "structure": "merged",
+        "absent_vars": [],
+        "blocks": [
+          {
+            "site": "L0.mlp_out@final",
+            "rank": 4,
+            "vars": [
+              0
+            ],
+            "tag": "plain"
+          },
+          {
+            "site": "L1.attn_out@final",
+            "rank": 4,
+            "vars": [
+              1,
+              2
+            ],
+            "tag": "merged"
+          }
+        ]
+      },
+      "attempts": [],
+      "meets_gate": true
+    },
+    "dst_absent": {
+      "arch": "M3",
+      "structure": "absent",
+      "clean_accuracy": 1.0,
+      "min_iit_accuracy": 1.0,
+      "mean_strict_accuracy": 1.0,
+      "iit_accuracy": {
+        "plain:v0:L0.mlp_out@final": 1.0,
+        "plain:v1:L1.mlp_out@final": 1.0
+      },
+      "placement": {
+        "structure": "absent",
+        "absent_vars": [
+          2
+        ],
+        "blocks": [
+          {
+            "site": "L0.mlp_out@final",
+            "rank": 4,
+            "vars": [
+              0
+            ],
+            "tag": "plain"
+          },
+          {
+            "site": "L1.mlp_out@final",
+            "rank": 4,
+            "vars": [
+              1
+            ],
+            "tag": "plain"
+          }
+        ]
+      },
+      "attempts": [],
+      "meets_gate": true
+    }
+  },
+  "token_hist": {
+    "src": {
+      "arch": "M1",
+      "structure": "plain",
+      "clean_accuracy": 1.0,
+      "min_iit_accuracy": 1.0,
+      "mean_strict_accuracy": 1.0,
+      "iit_accuracy": {
+        "plain:v0:L1.mlp_out@final": 1.0,
+        "plain:v1:L0.mlp_out@final": 1.0,
+        "plain:v2:L1.attn_out@final": 1.0
+      },
+      "placement": {
+        "structure": "plain",
+        "absent_vars": [],
+        "blocks": [
+          {
+            "site": "L1.mlp_out@final",
+            "rank": 4,
+            "vars": [
+              0
+            ],
+            "tag": "plain"
+          },
+          {
+            "site": "L0.mlp_out@final",
+            "rank": 4,
+            "vars": [
+              1
+            ],
+            "tag": "plain"
+          },
+          {
+            "site": "L1.attn_out@final",
+            "rank": 4,
+            "vars": [
+              2
+            ],
+            "tag": "plain"
+          }
+        ]
+      },
+      "attempts": [],
+      "meets_gate": true
+    },
+    "dst_shared": {
+      "arch": "M2",
+      "structure": "permuted",
+      "clean_accuracy": 1.0,
+      "min_iit_accuracy": 1.0,
+      "mean_strict_accuracy": 1.0,
+      "iit_accuracy": {
+        "plain:v1:L0.mlp_out@final": 1.0,
+        "plain:v0:L1.attn_out@final": 1.0,
+        "plain:v2:L0.mlp_out@final": 1.0
+      },
+      "placement": {
+        "structure": "permuted",
+        "absent_vars": [],
+        "blocks": [
+          {
+            "site": "L0.mlp_out@final",
+            "rank": 4,
+            "vars": [
+              1
+            ],
+            "tag": "plain"
+          },
+          {
+            "site": "L1.attn_out@final",
+            "rank": 4,
+            "vars": [
+              0
+            ],
+            "tag": "plain"
+          },
+          {
+            "site": "L0.mlp_out@final",
+            "rank": 4,
+            "vars": [
+              2
+            ],
+            "tag": "plain"
+          }
+        ]
+      },
+      "attempts": [],
+      "meets_gate": true
+    },
+    "dst_split_redundant": {
+      "arch": "M3",
+      "structure": "split_redundant",
+      "clean_accuracy": 1.0,
+      "min_iit_accuracy": 1.0,
+      "mean_strict_accuracy": 1.0,
+      "iit_accuracy": {
+        "split:v0:L1.mlp_out@final|L2.mlp_out@final": 1.0,
+        "redundant:v1:L0.mlp_out@final": 1.0,
+        "redundant:v1:L1.attn_out@final": 1.0,
+        "redundant_joint:v1:L0.mlp_out@final|L1.attn_out@final": 1.0,
+        "plain:v2:L2.attn_out@final": 1.0
+      },
+      "placement": {
+        "structure": "split_redundant",
+        "absent_vars": [],
+        "blocks": [
+          {
+            "site": "L1.mlp_out@final",
+            "rank": 2,
+            "vars": [
+              0
+            ],
+            "tag": "split"
+          },
+          {
+            "site": "L2.mlp_out@final",
+            "rank": 2,
+            "vars": [
+              0
+            ],
+            "tag": "split"
+          },
+          {
+            "site": "L0.mlp_out@final",
+            "rank": 4,
+            "vars": [
+              1
+            ],
+            "tag": "redundant"
+          },
+          {
+            "site": "L1.attn_out@final",
+            "rank": 4,
+            "vars": [
+              1
+            ],
+            "tag": "redundant"
+          },
+          {
+            "site": "L2.attn_out@final",
+            "rank": 4,
+            "vars": [
+              2
+            ],
+            "tag": "plain"
+          }
+        ]
+      },
+      "attempts": [],
+      "meets_gate": true
+    },
+    "dst_merged": {
+      "arch": "M2",
+      "structure": "merged",
+      "clean_accuracy": 1.0,
+      "min_iit_accuracy": 1.0,
+      "mean_strict_accuracy": 1.0,
+      "iit_accuracy": {
+        "plain:v0:L1.attn_out@final": 1.0,
+        "merged:v1+v2:L0.mlp_out@final": 1.0
+      },
+      "placement": {
+        "structure": "merged",
+        "absent_vars": [],
+        "blocks": [
+          {
+            "site": "L1.attn_out@final",
+            "rank": 4,
+            "vars": [
+              0
+            ],
+            "tag": "plain"
+          },
+          {
+            "site": "L0.mlp_out@final",
+            "rank": 4,
+            "vars": [
+              1,
+              2
+            ],
+            "tag": "merged"
+          }
+        ]
+      },
+      "attempts": [],
+      "meets_gate": true
+    },
+    "dst_absent": {
+      "arch": "M3",
+      "structure": "absent",
+      "clean_accuracy": 1.0,
+      "min_iit_accuracy": 1.0,
+      "mean_strict_accuracy": 1.0,
+      "iit_accuracy": {
+        "plain:v0:L0.mlp_out@final": 1.0,
+        "plain:v1:L1.mlp_out@final": 1.0
+      },
+      "placement": {
+        "structure": "absent",
+        "absent_vars": [
+          2
+        ],
+        "blocks": [
+          {
+            "site": "L0.mlp_out@final",
+            "rank": 4,
+            "vars": [
+              0
+            ],
+            "tag": "plain"
+          },
+          {
+            "site": "L1.mlp_out@final",
+            "rank": 4,
+            "vars": [
+              1
+            ],
+            "tag": "plain"
+          }
+        ]
+      },
+      "attempts": [],
+      "meets_gate": true
+    }
+  },
+  "dyck1_balance": {
+    "src": {
+      "arch": "M1",
+      "structure": "plain",
+      "clean_accuracy": 1.0,
+      "min_iit_accuracy": 1.0,
+      "mean_strict_accuracy": 1.0,
+      "iit_accuracy": {
+        "plain:v0:L1.attn_out@final": 1.0,
+        "plain:v1:L1.mlp_out@final": 1.0,
+        "plain:v2:L0.mlp_out@final": 1.0
+      },
+      "placement": {
+        "structure": "plain",
+        "absent_vars": [],
+        "blocks": [
+          {
+            "site": "L1.attn_out@final",
+            "rank": 4,
+            "vars": [
+              0
+            ],
+            "tag": "plain"
+          },
+          {
+            "site": "L1.mlp_out@final",
+            "rank": 4,
+            "vars": [
+              1
+            ],
+            "tag": "plain"
+          },
+          {
+            "site": "L0.mlp_out@final",
+            "rank": 4,
+            "vars": [
+              2
+            ],
+            "tag": "plain"
+          }
+        ]
+      },
+      "attempts": [],
+      "meets_gate": true
+    },
+    "dst_shared": {
+      "arch": "M2",
+      "structure": "permuted",
+      "clean_accuracy": 1.0,
+      "min_iit_accuracy": 1.0,
+      "mean_strict_accuracy": 1.0,
+      "iit_accuracy": {
+        "plain:v1:L0.mlp_out@final": 1.0,
+        "plain:v0:L0.mlp_out@final": 1.0,
+        "plain:v2:L1.attn_out@final": 1.0
+      },
+      "placement": {
+        "structure": "permuted",
+        "absent_vars": [],
+        "blocks": [
+          {
+            "site": "L0.mlp_out@final",
+            "rank": 4,
+            "vars": [
+              1
+            ],
+            "tag": "plain"
+          },
+          {
+            "site": "L0.mlp_out@final",
+            "rank": 4,
+            "vars": [
+              0
+            ],
+            "tag": "plain"
+          },
+          {
+            "site": "L1.attn_out@final",
+            "rank": 4,
+            "vars": [
+              2
+            ],
+            "tag": "plain"
+          }
+        ]
+      },
+      "attempts": [],
+      "meets_gate": true
+    },
+    "dst_split_redundant": {
+      "arch": "M3",
+      "structure": "split_redundant",
+      "clean_accuracy": 1.0,
+      "min_iit_accuracy": 1.0,
+      "mean_strict_accuracy": 1.0,
+      "iit_accuracy": {
+        "split:v0:L2.attn_out@final|L1.mlp_out@final": 1.0,
+        "redundant:v1:L2.mlp_out@final": 1.0,
+        "redundant:v1:L0.mlp_out@final": 1.0,
+        "redundant_joint:v1:L2.mlp_out@final|L0.mlp_out@final": 1.0,
+        "plain:v2:L1.attn_out@final": 1.0
+      },
+      "placement": {
+        "structure": "split_redundant",
+        "absent_vars": [],
+        "blocks": [
+          {
+            "site": "L2.attn_out@final",
+            "rank": 2,
+            "vars": [
+              0
+            ],
+            "tag": "split"
+          },
+          {
+            "site": "L1.mlp_out@final",
+            "rank": 2,
+            "vars": [
+              0
+            ],
+            "tag": "split"
+          },
+          {
+            "site": "L2.mlp_out@final",
+            "rank": 4,
+            "vars": [
+              1
+            ],
+            "tag": "redundant"
+          },
+          {
+            "site": "L0.mlp_out@final",
+            "rank": 4,
+            "vars": [
+              1
+            ],
+            "tag": "redundant"
+          },
+          {
+            "site": "L1.attn_out@final",
+            "rank": 4,
+            "vars": [
+              2
+            ],
+            "tag": "plain"
+          }
+        ]
+      },
+      "attempts": [],
+      "meets_gate": true
+    },
+    "dst_merged": {
+      "arch": "M2",
+      "structure": "merged",
+      "clean_accuracy": 1.0,
+      "min_iit_accuracy": 1.0,
+      "mean_strict_accuracy": 1.0,
+      "iit_accuracy": {
+        "plain:v0:L1.attn_out@final": 1.0,
+        "merged:v1+v2:L0.mlp_out@final": 1.0
+      },
+      "placement": {
+        "structure": "merged",
+        "absent_vars": [],
+        "blocks": [
+          {
+            "site": "L1.attn_out@final",
+            "rank": 4,
+            "vars": [
+              0
+            ],
+            "tag": "plain"
+          },
+          {
+            "site": "L0.mlp_out@final",
+            "rank": 4,
+            "vars": [
+              1,
+              2
+            ],
+            "tag": "merged"
+          }
+        ]
+      },
+      "attempts": [],
+      "meets_gate": true
+    },
+    "dst_absent": {
+      "arch": "M3",
+      "structure": "absent",
+      "clean_accuracy": 1.0,
+      "min_iit_accuracy": 1.0,
+      "mean_strict_accuracy": 1.0,
+      "iit_accuracy": {
+        "plain:v0:L1.mlp_out@final": 1.0,
+        "plain:v1:L0.mlp_out@final": 1.0
+      },
+      "placement": {
+        "structure": "absent",
+        "absent_vars": [
+          2
+        ],
+        "blocks": [
+          {
+            "site": "L1.mlp_out@final",
+            "rank": 4,
+            "vars": [
+              0
+            ],
+            "tag": "plain"
+          },
+          {
+            "site": "L0.mlp_out@final",
+            "rank": 4,
+            "vars": [
+              1
+            ],
+            "tag": "plain"
+          }
+        ]
+      },
+      "attempts": [],
+      "meets_gate": true
+    }
+  },
+  "sort_key": {
+    "src": {
+      "arch": "M1",
+      "structure": "plain",
+      "clean_accuracy": 1.0,
+      "min_iit_accuracy": 1.0,
+      "mean_strict_accuracy": 1.0,
+      "iit_accuracy": {
+        "plain:v0:L1.mlp_out@final": 1.0,
+        "plain:v1:L0.mlp_out@final": 1.0,
+        "plain:v2:L1.attn_out@final": 1.0
+      },
+      "placement": {
+        "structure": "plain",
+        "absent_vars": [],
+        "blocks": [
+          {
+            "site": "L1.mlp_out@final",
+            "rank": 4,
+            "vars": [
+              0
+            ],
+            "tag": "plain"
+          },
+          {
+            "site": "L0.mlp_out@final",
+            "rank": 4,
+            "vars": [
+              1
+            ],
+            "tag": "plain"
+          },
+          {
+            "site": "L1.attn_out@final",
+            "rank": 4,
+            "vars": [
+              2
+            ],
+            "tag": "plain"
+          }
+        ]
+      },
+      "attempts": [],
+      "meets_gate": true
+    },
+    "dst_shared": {
+      "arch": "M2",
+      "structure": "permuted",
+      "clean_accuracy": 1.0,
+      "min_iit_accuracy": 1.0,
+      "mean_strict_accuracy": 1.0,
+      "iit_accuracy": {
+        "plain:v0:L0.mlp_out@final": 1.0,
+        "plain:v2:L1.attn_out@final": 1.0,
+        "plain:v1:L0.mlp_out@final": 1.0
+      },
+      "placement": {
+        "structure": "permuted",
+        "absent_vars": [],
+        "blocks": [
+          {
+            "site": "L0.mlp_out@final",
+            "rank": 4,
+            "vars": [
+              0
+            ],
+            "tag": "plain"
+          },
+          {
+            "site": "L1.attn_out@final",
+            "rank": 4,
+            "vars": [
+              2
+            ],
+            "tag": "plain"
+          },
+          {
+            "site": "L0.mlp_out@final",
+            "rank": 4,
+            "vars": [
+              1
+            ],
+            "tag": "plain"
+          }
+        ]
+      },
+      "attempts": [
+        {
+          "attempt": 0,
+          "seed": 1134629290,
+          "steps": 900,
+          "warmup_frac": 0.0,
+          "lr_scale": 1.0,
+          "clean": 1.0,
+          "min_iit": 1.0,
+          "strict": 1.0,
+          "passed": true
+        }
+      ],
+      "meets_gate": true
+    },
+    "dst_split_redundant": {
+      "arch": "M3",
+      "structure": "split_redundant",
+      "clean_accuracy": 1.0,
+      "min_iit_accuracy": 1.0,
+      "mean_strict_accuracy": 1.0,
+      "iit_accuracy": {
+        "split:v0:L1.attn_out@final|L0.mlp_out@final": 1.0,
+        "redundant:v1:L2.mlp_out@final": 1.0,
+        "redundant:v1:L1.mlp_out@final": 1.0,
+        "redundant_joint:v1:L2.mlp_out@final|L1.mlp_out@final": 1.0,
+        "plain:v2:L2.attn_out@final": 1.0
+      },
+      "placement": {
+        "structure": "split_redundant",
+        "absent_vars": [],
+        "blocks": [
+          {
+            "site": "L1.attn_out@final",
+            "rank": 2,
+            "vars": [
+              0
+            ],
+            "tag": "split"
+          },
+          {
+            "site": "L0.mlp_out@final",
+            "rank": 2,
+            "vars": [
+              0
+            ],
+            "tag": "split"
+          },
+          {
+            "site": "L2.mlp_out@final",
+            "rank": 4,
+            "vars": [
+              1
+            ],
+            "tag": "redundant"
+          },
+          {
+            "site": "L1.mlp_out@final",
+            "rank": 4,
+            "vars": [
+              1
+            ],
+            "tag": "redundant"
+          },
+          {
+            "site": "L2.attn_out@final",
+            "rank": 4,
+            "vars": [
+              2
+            ],
+            "tag": "plain"
+          }
+        ]
+      },
+      "attempts": [
+        {
+          "attempt": 0,
+          "seed": 1591599102,
+          "steps": 1600,
+          "warmup_frac": 0.0,
+          "lr_scale": 1.0,
+          "clean": 1.0,
+          "min_iit": 1.0,
+          "strict": 1.0,
+          "passed": true
+        }
+      ],
+      "meets_gate": true
+    },
+    "dst_merged": {
+      "arch": "M2",
+      "structure": "merged",
+      "clean_accuracy": 1.0,
+      "min_iit_accuracy": 1.0,
+      "mean_strict_accuracy": 1.0,
+      "iit_accuracy": {
+        "plain:v0:L0.mlp_out@final": 1.0,
+        "merged:v1+v2:L1.attn_out@final": 1.0
+      },
+      "placement": {
+        "structure": "merged",
+        "absent_vars": [],
+        "blocks": [
+          {
+            "site": "L0.mlp_out@final",
+            "rank": 4,
+            "vars": [
+              0
+            ],
+            "tag": "plain"
+          },
+          {
+            "site": "L1.attn_out@final",
+            "rank": 4,
+            "vars": [
+              1,
+              2
+            ],
+            "tag": "merged"
+          }
+        ]
+      },
+      "attempts": [
+        {
+          "attempt": 0,
+          "seed": 539238225,
+          "steps": 800,
+          "warmup_frac": 0.0,
+          "lr_scale": 1.0,
+          "clean": 0.9248046875,
+          "min_iit": 0.0439453125,
+          "strict": 0.90283203125,
+          "passed": false
+        },
+        {
+          "attempt": 1,
+          "seed": 1560008615,
+          "steps": 1200,
+          "warmup_frac": 0.15,
+          "lr_scale": 1.0,
+          "clean": 1.0,
+          "min_iit": 1.0,
+          "strict": 1.0,
+          "passed": true
+        }
+      ],
+      "meets_gate": true
+    },
+    "dst_absent": {
+      "arch": "M3",
+      "structure": "absent",
+      "clean_accuracy": 1.0,
+      "min_iit_accuracy": 1.0,
+      "mean_strict_accuracy": 1.0,
+      "iit_accuracy": {
+        "plain:v0:L0.mlp_out@final": 1.0,
+        "plain:v1:L1.mlp_out@final": 1.0
+      },
+      "placement": {
+        "structure": "absent",
+        "absent_vars": [
+          2
+        ],
+        "blocks": [
+          {
+            "site": "L0.mlp_out@final",
+            "rank": 4,
+            "vars": [
+              0
+            ],
+            "tag": "plain"
+          },
+          {
+            "site": "L1.mlp_out@final",
+            "rank": 4,
+            "vars": [
+              1
+            ],
+            "tag": "plain"
+          }
+        ]
+      },
+      "attempts": [
+        {
+          "attempt": 0,
+          "seed": 2077789446,
+          "steps": 800,
+          "warmup_frac": 0.0,
+          "lr_scale": 1.0,
+          "clean": 1.0,
+          "min_iit": 1.0,
+          "strict": 1.0,
+          "passed": true
+        }
+      ],
+      "meets_gate": true
+    }
+  },
+  "induction_copy": {
+    "src": {
+      "arch": "M1",
+      "structure": "plain",
+      "clean_accuracy": 1.0,
+      "min_iit_accuracy": 1.0,
+      "mean_strict_accuracy": 0.9993489583333334,
+      "iit_accuracy": {
+        "plain:v0:L1.attn_out@final": 1.0,
+        "plain:v1:L1.mlp_out@final": 1.0,
+        "plain:v2:L0.mlp_out@final": 1.0
+      },
+      "placement": {
+        "structure": "plain",
+        "absent_vars": [],
+        "blocks": [
+          {
+            "site": "L1.attn_out@final",
+            "rank": 4,
+            "vars": [
+              0
+            ],
+            "tag": "plain"
+          },
+          {
+            "site": "L1.mlp_out@final",
+            "rank": 4,
+            "vars": [
+              1
+            ],
+            "tag": "plain"
+          },
+          {
+            "site": "L0.mlp_out@final",
+            "rank": 4,
+            "vars": [
+              2
+            ],
+            "tag": "plain"
+          }
+        ]
+      },
+      "attempts": [
+        {
+          "attempt": 0,
+          "seed": 1428661360,
+          "steps": 900,
+          "warmup_frac": 0.0,
+          "lr_scale": 1.0,
+          "clean": 1.0,
+          "min_iit": 1.0,
+          "strict": 0.9993489583333334,
+          "passed": true
+        }
+      ],
+      "meets_gate": true
+    },
+    "dst_shared": {
+      "arch": "M2",
+      "structure": "permuted",
+      "clean_accuracy": 1.0,
+      "min_iit_accuracy": 0.96875,
+      "mean_strict_accuracy": 0.99267578125,
+      "iit_accuracy": {
+        "plain:v0:L0.mlp_out@final": 0.96875,
+        "plain:v2:L1.attn_out@final": 0.9970703125,
+        "plain:v1:L0.mlp_out@final": 0.9755859375
+      },
+      "placement": {
+        "structure": "permuted",
+        "absent_vars": [],
+        "blocks": [
+          {
+            "site": "L0.mlp_out@final",
+            "rank": 4,
+            "vars": [
+              0
+            ],
+            "tag": "plain"
+          },
+          {
+            "site": "L1.attn_out@final",
+            "rank": 4,
+            "vars": [
+              2
+            ],
+            "tag": "plain"
+          },
+          {
+            "site": "L0.mlp_out@final",
+            "rank": 4,
+            "vars": [
+              1
+            ],
+            "tag": "plain"
+          }
+        ]
+      },
+      "attempts": [
+        {
+          "attempt": 0,
+          "seed": 756077503,
+          "steps": 900,
+          "warmup_frac": 0.0,
+          "lr_scale": 1.0,
+          "clean": 1.0,
+          "min_iit": 0.96875,
+          "strict": 0.99267578125,
+          "passed": true
+        }
+      ],
+      "meets_gate": true
+    },
+    "dst_split_redundant": {
+      "arch": "M3",
+      "structure": "split_redundant",
+      "clean_accuracy": 1.0,
+      "min_iit_accuracy": 0.9912109375,
+      "mean_strict_accuracy": 0.9998046875,
+      "iit_accuracy": {
+        "split:v0:L1.mlp_out@final|L1.attn_out@final": 1.0,
+        "redundant:v1:L0.mlp_out@final": 0.9912109375,
+        "redundant:v1:L2.mlp_out@final": 1.0,
+        "redundant_joint:v1:L0.mlp_out@final|L2.mlp_out@final": 1.0,
+        "plain:v2:L2.attn_out@final": 1.0
+      },
+      "placement": {
+        "structure": "split_redundant",
+        "absent_vars": [],
+        "blocks": [
+          {
+            "site": "L1.mlp_out@final",
+            "rank": 2,
+            "vars": [
+              0
+            ],
+            "tag": "split"
+          },
+          {
+            "site": "L1.attn_out@final",
+            "rank": 2,
+            "vars": [
+              0
+            ],
+            "tag": "split"
+          },
+          {
+            "site": "L0.mlp_out@final",
+            "rank": 4,
+            "vars": [
+              1
+            ],
+            "tag": "redundant"
+          },
+          {
+            "site": "L2.mlp_out@final",
+            "rank": 4,
+            "vars": [
+              1
+            ],
+            "tag": "redundant"
+          },
+          {
+            "site": "L2.attn_out@final",
+            "rank": 4,
+            "vars": [
+              2
+            ],
+            "tag": "plain"
+          }
+        ]
+      },
+      "attempts": [
+        {
+          "attempt": 0,
+          "seed": 83194941,
+          "steps": 1600,
+          "warmup_frac": 0.0,
+          "lr_scale": 1.0,
+          "clean": 0.9990234375,
+          "min_iit": 0.5947265625,
+          "strict": 0.996875,
+          "passed": false
+        },
+        {
+          "attempt": 1,
+          "seed": 2135200141,
+          "steps": 2400,
+          "warmup_frac": 0.15,
+          "lr_scale": 1.0,
+          "clean": 1.0,
+          "min_iit": 0.9912109375,
+          "strict": 0.9998046875,
+          "passed": true
+        }
+      ],
+      "meets_gate": true
+    },
+    "dst_merged": {
+      "arch": "M2",
+      "structure": "merged",
+      "clean_accuracy": 1.0,
+      "min_iit_accuracy": 0.9892578125,
+      "mean_strict_accuracy": 0.998046875,
+      "iit_accuracy": {
+        "plain:v0:L1.attn_out@final": 1.0,
+        "merged:v1+v2:L0.mlp_out@final": 0.9892578125
+      },
+      "placement": {
+        "structure": "merged",
+        "absent_vars": [],
+        "blocks": [
+          {
+            "site": "L1.attn_out@final",
+            "rank": 4,
+            "vars": [
+              0
+            ],
+            "tag": "plain"
+          },
+          {
+            "site": "L0.mlp_out@final",
+            "rank": 4,
+            "vars": [
+              1,
+              2
+            ],
+            "tag": "merged"
+          }
+        ]
+      },
+      "attempts": [
+        {
+          "attempt": 0,
+          "seed": 1862510804,
+          "steps": 800,
+          "warmup_frac": 0.0,
+          "lr_scale": 1.0,
+          "clean": 0.958984375,
+          "min_iit": 0.1328125,
+          "strict": 0.9462890625,
+          "passed": false
+        },
+        {
+          "attempt": 1,
+          "seed": 1701362357,
+          "steps": 1200,
+          "warmup_frac": 0.15,
+          "lr_scale": 1.0,
+          "clean": 1.0,
+          "min_iit": 0.794921875,
+          "strict": 0.99462890625,
+          "passed": false
+        },
+        {
+          "attempt": 2,
+          "seed": 2040699346,
+          "steps": 1600,
+          "warmup_frac": 0.2,
+          "lr_scale": 0.7,
+          "clean": 1.0,
+          "min_iit": 0.9892578125,
+          "strict": 0.998046875,
+          "passed": true
+        }
+      ],
+      "meets_gate": true
+    },
+    "dst_absent": {
+      "arch": "M3",
+      "structure": "absent",
+      "clean_accuracy": 1.0,
+      "min_iit_accuracy": 1.0,
+      "mean_strict_accuracy": 1.0,
+      "iit_accuracy": {
+        "plain:v0:L1.mlp_out@final": 1.0,
+        "plain:v1:L0.mlp_out@final": 1.0
+      },
+      "placement": {
+        "structure": "absent",
+        "absent_vars": [
+          2
+        ],
+        "blocks": [
+          {
+            "site": "L1.mlp_out@final",
+            "rank": 4,
+            "vars": [
+              0
+            ],
+            "tag": "plain"
+          },
+          {
+            "site": "L0.mlp_out@final",
+            "rank": 4,
+            "vars": [
+              1
+            ],
+            "tag": "plain"
+          }
+        ]
+      },
+      "attempts": [
+        {
+          "attempt": 0,
+          "seed": 1465297658,
+          "steps": 800,
+          "warmup_frac": 0.0,
+          "lr_scale": 1.0,
+          "clean": 1.0,
+          "min_iit": 1.0,
+          "strict": 1.0,
+          "passed": true
+        }
+      ],
+      "meets_gate": true
+    }
+  },
+  "_manifest_hash": "805d62d877345c30"
+}

@@ -1,0 +1,35 @@
+# Controlled (primary) stage: these are sufficient on their own, and are the versions the
+# committed controlled-stage results were produced with. The natural-stage block below is
+# a *range* rather than a pin because it has to reach Gemma-3; the controlled results in
+# results/ were produced with transformers 4.46.3, which that range excludes, so a rerun of
+# the controlled stage does not depend on it either way (nothing under cccplus/ imports
+# transformers except models/hf_lm.py, which only the natural stage uses).
+torch==2.4.1
+numpy==1.26.4
+scipy==1.13.1
+scikit-learn==1.5.2
+pandas==2.2.3
+matplotlib==3.9.2
+PyYAML==6.0.3
+tqdm==4.66.5
+
+# Natural-model stage (Sec. 4.2). Not required by the controlled stage, but installed
+# in this environment: the natural-stage runner and tests/test_natural.py both import
+# transformers, and the self-test builds its models through it.
+#
+# Gemma-3 needs >= 4.50: the `gemma3` architecture is absent from the config mapping in
+# 4.46.3, so `natural.paper_matrix` (google/gemma-3-1b-pt, google/gemma-3-4b-pt) cannot be
+# loaded on the older pin. 4.57.x is the last 4.x line; 5.x is a breaking major release and
+# is deliberately excluded. `HFCausalLM.load` spans the 4.56 rename of `torch_dtype` to
+# `dtype` and raises if the dtype argument was ignored, so either end of this range works.
+transformers>=4.50,<5
+# Bound by transformers: 4.50-4.55 need tokenizers>=0.21,<0.22; 4.56-4.57 need
+# >=0.22,<=0.23. Left to the resolver rather than pinned, so it can satisfy whichever
+# transformers it picks.
+tokenizers>=0.21,<=0.23
+safetensors>=0.4.3
+huggingface-hub>=0.34,<1.0   # checkpoint download + auth for the gated Gemma/Llama repos
+
+# Only needed to fit translators on real text rather than the synthetic fallback
+# (cccplus/tasks/corpus.py falls back to generated filler when this is absent).
+# datasets==3.0.1

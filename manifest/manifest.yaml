@@ -1,0 +1,274 @@
+# CCC+ frozen manifest.
+#
+# Everything in this file is fixed BEFORE any test-split evaluation, per Sec. 4:
+# "All models, splits, translator budgets, thresholds, seeds, and comparisons are
+# frozen in one manifest before test evaluation."
+#
+# Threshold *values* are not written here: Sec. 3.6 requires them to be estimated
+# from calibration controls. What is frozen here is the *estimator* (quantile
+# level, floor, control family), so no test label can influence them.
+
+manifest_version: 1
+name: ccc_plus_reproduction
+
+# ---------------------------------------------------------------- global seeds
+seeds:
+  master: 20260919
+  translator_seeds: [0, 1, 2, 3, 4]      # Sec 4.5: Procrustes deterministic; five seeds otherwise
+  siit_model_seeds: [101, 202, 303]
+  bootstrap: 7777
+
+# ------------------------------------------------------------- data partitions
+# Sec 4.3: grouped by fact / IOI template-name family, 20/20/20/40.
+partitions:
+  fractions:
+    discovery: 0.20
+    hyperparameter: 0.20
+    calibration: 0.20
+    test: 0.40
+  group_by: family            # never split a template/fact family across partitions
+  translator_corpus:
+    split_by: document
+    forward_share: 0.5        # 25M / 25M in the paper; halves here
+    reverse_share: 0.5
+    equal_token_sensitivity: true   # 12.5M+12.5M directional vs 25M coupled
+
+# ------------------------------------------------------------ causal signature
+signature:
+  # Sec 3.1: preregistered family A of counterfactual patch settings.
+  settings: [full, half]              # full patch + half-strength interpolation
+  setting_alphas:
+    full: 1.0
+    half: 0.5
+  weights: setting_balanced           # w_q >= 0, sum_q w_q = 1 (equal mass per setting)
+  eta: 1.0e-6                         # stabilization constant, fixed on calibration data
+  scale_estimator:
+    kind: median_nonzero_norm         # c_{M,T}, Sec 3.6
+    floor_quantile: 0.10              # preregistered floor
+    min_floor: 1.0e-3
+
+# ------------------------------------------------------------- source gating
+source_gate:
+  tau_min_estimator:
+    kind: upper_quantile_of_controls  # Sec 3.6
+    quantile: 0.95
+    controls: [null_direction, unrelated_task]
+  require_predicted_sign: true
+
+# ------------------------------------------------- equivalence bound estimators
+equivalence_bounds:
+  # Sec 3.6: fixed from repeated identity and known-reparameterization controls,
+  # subject to a maximum false-acceptance rate on labeled calibration negatives.
+  control_quantile: 0.95
+  max_calibration_false_acceptance: 0.05
+  # Bound modes reported side by side:
+  #   controls_only  literal Sec. 3.6 (within-model identity / reparameterisation)
+  #   cycle_aware    additionally floored so that calibration-split positives are
+  #                  retained at the target rate, which a within-model noise floor
+  #                  cannot guarantee for a cross-model round trip
+  modes: [controls_only, cycle_aware]
+  primary_mode: cycle_aware
+  target_positive_retention: 0.90
+  controls: [identity, orthogonal_reparameterization, scale_reparameterization]
+  share_across_rules_when_units_permit: true
+
+# ----------------------------------------------------------------- translators
+translators:
+  procrustes:
+    kind: orthogonal                  # semi-orthogonal when d_A != d_B
+    center_within_model: true
+    site_selection: max_heldout_cosine
+    tie_break: [layer_index, site_order, feature_index]
+    deterministic: true
+    reverse: independent_fit          # never transpose / pseudoinverse
+  crosscoder:
+    n_atoms: 256
+    l1_penalty: 0.003
+    steps: 800
+    lr: 0.003
+    batch: 256
+    atom_selection: max_abs_cosine_source_decoder
+    subspace_atoms: 4                 # preregistered atom budget for rank-r sources
+  dfc:
+    n_shared_atoms: 192
+    n_specific_atoms_per_model: 64
+    l1_penalty: 0.003
+    specific_penalty: 0.006           # encourages shared explanation when possible
+    steps: 800
+    lr: 0.003
+    batch: 256
+    subspace_atoms: 4
+    shared_classification_threshold: 0.60   # shared-energy fraction to call an atom shared
+    abstain_if_not_shared: true
+
+# --------------------------------------------------------- causal baselines
+causal_baselines:
+  mas:
+    rank: null            # defaults to source mechanism rank
+    steps: 600
+    lr: 0.01
+  latent_stitch:
+    steps: 600
+    lr: 0.01
+  stitch:
+    steps: 600
+    lr: 0.01
+
+# ------------------------------------------------------- validation ablation
+# Cumulative ladder, Sec 4.5 / 5.3. Each row adds exactly one condition.
+validation_rules:
+  - representational
+  - round_trip_only
+  - forward_only
+  - scalar_ccc            # forward gate + coupled scalar return
+  - ccc_ind               # forward gate + independent scalar return
+  - ccc_shape             # + destination signature shape (isolates shape)
+  - ccc_sig               # + destination signature magnitude (Eq 9 complete)
+  - pairwise_ccc_plus     # + independent signature return (Eq 11)
+  - multi_model_ccc_plus  # + second destination
+
+planned_contrasts:        # Sec 3.6: Holm correction covers the seven planned contrasts
+  - [forward_only, representational]
+  - [scalar_ccc, forward_only]
+  - [ccc_ind, scalar_ccc]
+  - [ccc_sig, ccc_ind]
+  - [pairwise_ccc_plus, ccc_sig]
+  - [pairwise_ccc_plus, forward_only]
+  - [multi_model_ccc_plus, pairwise_ccc_plus]
+primary_contrast: [pairwise_ccc_plus, forward_only]
+
+# ------------------------------------------------------------------ statistics
+statistics:
+  bootstrap_replicates: 10000
+  # Levels the path-level bootstrap actually resamples, and the code reads this list
+  # rather than hardcoding it: an unsupported level now raises instead of being
+  # silently dropped. The paper also clusters on template/fact `family` and resamples
+  # prompts within clusters. Neither is done here, and neither can be at this
+  # granularity: a path's signature is measured over *every* prompt in its split, so a
+  # path is not nested inside one family. Prompt-level variability is reported directly
+  # as per-family worst-case error instead (README deviation 6).
+  cluster_levels: [stratum, source_mechanism, translator_seed]
+  resample_within_cluster: none        # paper: prompts; not implemented, see above
+  multiple_comparisons: holm
+  ci: 0.95
+  matched_retention_reference: pairwise_ccc_plus
+  # "FA at matched positive retention" needs a retention level to match at. Matching
+  # each rule to the reference rule's own calibrated retention is degenerate when
+  # that retention is low, so the level is preregistered and the whole
+  # FA-vs-retention curve is reported alongside it.
+  matched_retention_target: 0.90
+  retention_curve: [0.50, 0.70, 0.80, 0.90, 0.95, 0.99]
+
+# --------------------------------------------- controlled ground-truth stage
+controlled:
+  programs: [frac_prevs, running_max, token_hist, dyck1_balance, sort_key, induction_copy]
+  case_types: [shared, permuted, split, merged, redundant, absent]
+  architectures:              # independently initialized, vary depth/width/heads
+    M1: {n_layers: 3, d_model: 64, n_heads: 4, d_head: 16, d_mlp: 128}
+    M2: {n_layers: 2, d_model: 96, n_heads: 6, d_head: 16, d_mlp: 192}
+    M3: {n_layers: 4, d_model: 80, n_heads: 5, d_head: 16, d_mlp: 160}
+  # Mechanisms are planted only in additive sublayer outputs (attn_out / mlp_out),
+  # excluding the final layer's mlp_out, which is left free to combine variables.
+  mechanism_sublayers: [attn_out, mlp_out]
+  mechanism_rank: 4
+  instances:
+    src:                 {arch: M1, role: source,      structure: plain,            seed_offset: 0}
+    dst_shared:          {arch: M2, role: destination, structure: permuted,         seed_offset: 1}
+    dst_split_redundant: {arch: M3, role: destination, structure: split_redundant,  seed_offset: 2}
+    dst_merged:          {arch: M2, role: destination, structure: merged,           seed_offset: 3}
+    dst_absent:          {arch: M3, role: destination, structure: absent,           seed_offset: 4}
+  siit:
+    steps: 3000
+    lr: 0.002
+    batch: 192
+    behavior_weight: 1.0
+    iit_weight: 1.0
+    strict_weight: 0.3
+    min_clean_accuracy: 0.95
+    min_iit_accuracy: 0.90
+  n_prompts:
+    probe: 2048            # translator fitting corpus (split by document/block)
+    task: 1600             # split 20/20/20/40
+  n_families: 20           # template families; partitions are family-disjoint
+  per_family: 40
+  identity_cycle_check: true   # implementation check only, not a result
+  # Reverse translation is anchored to the source mechanism's site: the site is part
+  # of the query, not something the return leg has to rediscover. The unanchored
+  # policy is reported as a sensitivity.
+  reverse_site_policy: anchor
+  # Seeds actually executed per translator family. Procrustes is deterministic;
+  # the stochastic dictionary methods use three seeds and the behaviour-supervised
+  # baselines two, a reduction from the manifest's five that is a compute
+  # constraint of this host and is reported with the results.
+  translator_seeds:
+    procrustes: [0]
+    crosscoder: [0, 1, 2]
+    dfc: [0, 1, 2]
+    mas: [0, 1]
+    latent_stitch: [0, 1]
+    stitch: [0, 1]
+  # Rule-discrimination (Part A) uses the unsupervised translators' reverse maps,
+  # so every rule is compared on an identical candidate set.
+  rule_discrimination_translators: [procrustes, crosscoder, dfc]
+
+# ---------------------------------------------- natural-model stage (Sec 4.2)
+natural:
+  # The paper's frozen matrix. Kept verbatim so the experiment is reproducible on
+  # hardware that can hold these checkpoints.
+  paper_matrix:
+    smaller: {pythia: EleutherAI/pythia-1.4b-deduped, gemma: google/gemma-3-1b-pt, llama: meta-llama/Llama-3.2-1B}
+    larger:  {pythia: EleutherAI/pythia-2.8b-deduped, gemma: google/gemma-3-4b-pt, llama: meta-llama/Llama-3.2-3B}
+  # Feasible substitute stratum actually executed here (8 GB host, ungated repos).
+  # Preserves the property that matters for CCC+: three architecturally distinct,
+  # independently trained families.
+  executed_matrix:
+    tiny:
+      pythia: EleutherAI/pythia-160m-deduped     # GPT-NeoX
+      gpt2:   gpt2                               # GPT-2
+      llama:  HuggingFaceTB/SmolLM2-135M         # Llama architecture
+  dtype: float32
+  ioi:
+    screening_pairs: 600
+    analysis_pairs: 2400
+    template_families: 12
+    name_split_disjoint: true
+    min_clean_accuracy: 0.90
+    source_candidates: final_position_attention_heads
+  factual_recall:
+    facts: 600
+    screening_paraphrases: 2
+    analysis_paraphrases: 4
+    require_correct_outranks_distractor_in_every_model: true
+    source_candidates: final_subject_token_mlp_out
+    subspace_rank_robustness: 4
+  controls: [permuted_destination, task_active_different_subspace, shuffled_pair_translator]
+  # Translator-fitting corpus. The paper uses 50M tokens split by document; here the
+  # unit is a passage with an explicit document id, and activations are sampled at
+  # several positions per passage so the dictionary methods get enough independent
+  # rows without needing the full token budget resident.
+  corpus:
+    source: auto              # wikitext-103-raw-v1, else a local file, else synthetic
+    passages: 2000
+    positions_per_passage: 4
+    max_length: 128
+  # Translator maps are fitted per site pair, so the eligible site family is a grid at
+  # evenly spaced *relative* depths: "Equal layer indices are not required."
+  site_grid:
+    sublayers: [attn_out, mlp_out]
+    n_depths: 6
+  max_source_mechanisms: 24
+
+# ------------------------------------------------- multi-site extension (3.7)
+multisite:
+  min_nodes: 2
+  min_edges: 1
+  require_non_additive_joint_effect: true
+  discovery_only_path_patching: true
+  interaction_contrast: true          # Gamma_lk = Delta_lk - Delta_l - Delta_k
+
+# ------------------------------------------------------------------- outputs
+outputs:
+  results_dir: results
+  tables_dir: results/tables
+  figures_dir: results/figures
+  cache_dir: results/cache

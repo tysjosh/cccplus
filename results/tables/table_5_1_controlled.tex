@@ -1,0 +1,21 @@
+\begin{table}[t]
+\centering
+\small
+\begin{tabular}{lrrrrr}
+\toprule
+Validation rule & Ret. & Cov. & FA & AUROC & FA @ matched Ret. \\
+\midrule
+Representational & 0.000 [0.000, 0.000] & 1.000 [1.000, 1.000] & 0.048 [0.007, 0.096] & 0.581 [0.483, 0.684] & 0.742 [0.603, 0.901] \\
+Round trip only & 0.892 [0.798, 0.962] & 1.000 [1.000, 1.000] & 0.750 [0.668, 0.828] & 0.638 [0.569, 0.702] & 0.770 [0.597, 0.880] \\
+Forward only & 1.000 [1.000, 1.000] & 1.000 [1.000, 1.000] & 0.892 [0.819, 0.945] & 0.554 [0.528, 0.590] & 0.892 [0.819, 0.945] \\
+Original scalar CCC & 0.892 [0.798, 0.962] & 1.000 [1.000, 1.000] & 0.667 [0.571, 0.754] & 0.678 [0.611, 0.741] & 0.685 [0.520, 0.799] \\
+CCC-Ind & 0.899 [0.807, 0.971] & 1.000 [1.000, 1.000] & 0.653 [0.546, 0.745] & 0.673 [0.599, 0.743] & 0.654 [0.518, 0.786] \\
+CCC-Shape & 0.741 [0.600, 0.866] & 1.000 [1.000, 1.000] & 0.267 [0.180, 0.357] & 0.787 [0.711, 0.858] & 0.498 [0.315, 0.660] \\
+CCC-Sig & 0.704 [0.562, 0.833] & 1.000 [1.000, 1.000] & 0.152 [0.082, 0.228] & 0.877 [0.811, 0.930] & 0.267 [0.136, 0.380] \\
+Pairwise CCC+ & 0.582 [0.422, 0.732] & 1.000 [1.000, 1.000] & 0.121 [0.064, 0.184] & 0.860 [0.793, 0.915] & 0.334 [0.198, 0.460] \\
+Multi-model CCC+ & 0.368 [0.121, 0.648] & 1.000 [1.000, 1.000] & 0.028 [0.003, 0.063] & 0.902 [0.797, 0.965] & 0.277 [0.076, 0.465] \\
+\bottomrule
+\end{tabular}
+\caption{Controlled ground-truth results. Ret. is positive retention, Cov. is candidate coverage, FA is false acceptance; 95\% hierarchical-bootstrap intervals in brackets. Every rule is evaluated on the same candidates.}
+\label{tab:table_5_1_controlled}
+\end{table}

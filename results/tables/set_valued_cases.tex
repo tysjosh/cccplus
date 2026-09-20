@@ -1,0 +1,17 @@
+\begin{table}[t]
+\centering
+\small
+\begin{tabular}{lrrrrrrr}
+\toprule
+Planted case & n & Contexts & Subspace recall & Subspace precision & Set exact & Joint signature pass & Component-level pass \\
+\midrule
+permuted & 126 & 126 & 0.571 & 0.495 & 0.421 & 0.571 & 0.571 \\
+split\_half & 84 & 42 & 0.155 & 0.240 & 0.000 & n/a & 0.155 \\
+shared & 84 & 84 & 0.405 & 0.351 & 0.298 & 0.405 & 0.405 \\
+redundant & 84 & 42 & 0.798 & 0.885 & 0.476 & 0.798 & 0.798 \\
+merged & 84 & 84 & 0.560 & 0.506 & 0.452 & 0.560 & 0.560 \\
+\bottomrule
+\end{tabular}
+\caption{Planted case types. Split and merged variables are set-valued: a single component cannot be the whole counterpart.}
+\label{tab:set_valued_cases}
+\end{table}
