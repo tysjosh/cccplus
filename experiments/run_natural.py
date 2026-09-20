@@ -105,6 +105,28 @@ def open_model(args, key: str, repo: str) -> HFCausalLM:
                            trust_remote_code=args.trust_remote_code)
 
 
+def _permuted_control(dest_model, dest_mechs, candidate, seed: int):
+    """Build the permuted-destination control inside the destination model.
+
+    Preference order, all of which keep the control in the destination's own index space:
+
+    1. one of the destination's own source-gated mechanisms, permuted to a different head
+       at that model's layer. This is the Sec. 4.2 control as specified: task-active in
+       the destination, different identity;
+    2. failing that, a permutation of the translated candidate, which also lives in the
+       destination;
+    3. failing both, ``None``, which the protocol records as an abstention rather than
+       inventing a subspace of the wrong dimension.
+    """
+    if dest_mechs:
+        basis = dest_mechs[seed % len(dest_mechs)]
+    elif candidate is not None:
+        basis = candidate
+    else:
+        return None
+    return permuted_destination_control(basis, dest_model, seed)
+
+
 def resolve_matrix(mf: FrozenManifest, stratum: str) -> Dict[str, str]:
     ex = mf.path_of("natural.executed_matrix", {}) or {}
     if stratum in ex:
@@ -271,13 +293,17 @@ def phase_evaluate(args, mf, matrix, cache: Path) -> int:
                             for tr in (pair.reverse_independent, pair.reverse_coupled):
                                 if tr is not None and hasattr(tr, "anchor_site"):
                                     tr.anchor_site = mech.site
+                            # The permuted-destination control must be defined *in the
+                            # destination model*: a different head at one of that model's
+                            # own layers. Deriving it from the source mechanism would
+                            # index the destination's layers with a source layer number.
+                            ctrl_seed = stable_seed(master, "ctrl", src_key, dst_key, mech.label)
+                            ctrl = _permuted_control(
+                                models[dst_key], mechs[dst_key], cand, ctrl_seed
+                            )
                             for case, candidate, label in (
                                 ("translated", cand, 1),
-                                ("permuted_destination",
-                                 permuted_destination_control(
-                                     mech, models[dst_key],
-                                     stable_seed(master, "ctrl", src_key, dst_key, mech.label)) ,
-                                 0),
+                                ("permuted_destination", ctrl, 0),
                             ):
                                 rec = measure_path(
                                     program=task_name, task_name=task.name,

@@ -151,7 +151,19 @@ def permuted_destination_control(
     semantically different subspaces" as controls. For a head mechanism this is a
     different head at the same layer; for an MLP direction it is a random rotation
     of the same site's difference direction.
+
+    ``mech`` must already live in ``model``. The control is built by re-indexing that
+    model's own layers and heads, and nothing about a layer index, a head index or a
+    site dimension carries across models -- the paper is explicit that equal layer
+    indices are not required. Passing a source mechanism with a destination model reads
+    as plausible and produces either an IndexError or, worse, a silently wrong subspace.
     """
+    if mech.model and model.name and mech.model != model.name:
+        raise ValueError(
+            f"permuted_destination_control needs a mechanism belonging to {model.name!r}, "
+            f"got one from {mech.model!r}. Layer/head indices and site dimensions are "
+            f"model-specific, so a cross-model mechanism cannot define this control."
+        )
     if mech.meta.get("kind") == "ioi_head":
         n_heads = model.info.n_heads
         other = (int(mech.meta["head"]) + 1 + (seed % max(n_heads - 1, 1))) % n_heads

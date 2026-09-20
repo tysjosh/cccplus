@@ -181,6 +181,46 @@ def test_corpus_rows_carry_documents_and_split_disjointly():
     )
 
 
+def test_permuted_control_stays_in_the_destination_index_space():
+    """Regression: the control was built from the source mechanism, destination model.
+
+    Layer and head indices do not transfer across models -- the paper is explicit that
+    equal layer indices are not required. A mechanism from a 34-layer model used against
+    a 28-layer one raised IndexError partway through the six directed mappings, and a
+    mechanism from a 2560-wide model would have produced a wrong-dimension subspace
+    against a 3072-wide one without raising at all.
+    """
+    import experiments.run_natural as RN
+    from cccplus.pipelines.natural import ioi_source_mechanisms, permuted_destination_control
+
+    deep = HFCausalLM.from_random_config("llama", "deep", num_hidden_layers=6)
+    shallow = HFCausalLM.from_random_config("llama", "shallow", num_hidden_layers=3)
+
+    deep_mechs = ioi_source_mechanisms(deep, layers=[5])
+    assert deep_mechs and int(deep_mechs[0].meta["layer"]) == 5
+
+    # the mistake must now be refused rather than indexing out of range
+    try:
+        permuted_destination_control(deep_mechs[0], shallow, 0)
+    except ValueError as exc:
+        assert "shallow" in str(exc) and "deep" in str(exc)
+    else:
+        raise AssertionError("a cross-model mechanism must not define this control")
+
+    # and the helper keeps the control inside the destination
+    shallow_mechs = ioi_source_mechanisms(shallow, layers=[0, 1, 2])
+    for seed in range(5):
+        ctrl = RN._permuted_control(shallow, shallow_mechs, None, seed)
+        assert ctrl is not None and ctrl.model == shallow.name
+        assert int(ctrl.meta["head"]) < shallow.info.n_heads
+        assert ctrl.V.shape[0] == shallow.info.d_model, "control has the wrong width"
+
+    # with no destination mechanisms it falls back to the candidate, then abstains
+    cand = shallow_mechs[0]
+    assert RN._permuted_control(shallow, [], cand, 0) is not None
+    assert RN._permuted_control(shallow, [], None, 0) is None
+
+
 def test_decoder_layers_found_behind_a_multimodal_wrapper():
     """Gemma-3 4B+ loads as Gemma3ForConditionalGeneration, not Gemma3ForCausalLM.
 
