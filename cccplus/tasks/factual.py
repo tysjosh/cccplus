@@ -209,20 +209,25 @@ class ContinuationBatch:
 
 def _sequence_logprob(model, cb: ContinuationBatch, patches=()) -> torch.Tensor:
     """Mean log p of the continuation tokens, teacher forced, under ``patches``."""
-    full = model.full_logits(cb.batch, patches)              # [B, T, V]
-    logprobs = torch.log_softmax(full.to(torch.float32), dim=-1)
-    tokens = cb.batch.tokens.to(logprobs.device)
-    B, T, _ = logprobs.shape
-    ar = torch.arange(T, device=logprobs.device)[None, :]
-    start = cb.start.to(logprobs.device)[:, None]
-    length = cb.length.to(logprobs.device)[:, None]
-    mask = (ar >= start) & (ar < start + length)              # continuation positions
-    # log p(token at t) is read from the distribution at t-1
-    tgt = tokens.clamp(min=0)
-    lp = logprobs[:, :-1].gather(2, tgt[:, 1:, None]).squeeze(2)   # [B, T-1]
-    m = mask[:, 1:].to(lp.dtype)
-    denom = m.sum(dim=1).clamp(min=1.0)
-    return (lp * m).sum(dim=1) / denom                        # length-normalised
+    # Reduced per chunk rather than from one [B, T, V] tensor: this score is the reason
+    # the natural stage is slow, and on a 262k-vocab model the assembled tensor does not
+    # fit in GPU memory at all. Only the gathered target logprobs survive the loop.
+    out = []
+    for rows, chunk in model.iter_full_logits(cb.batch, patches):
+        logprobs = torch.log_softmax(chunk.to(torch.float32), dim=-1)
+        tokens = cb.batch.tokens[rows].to(logprobs.device)
+        T = logprobs.shape[1]
+        ar = torch.arange(T, device=logprobs.device)[None, :]
+        start = cb.start[rows].to(logprobs.device)[:, None]
+        length = cb.length[rows].to(logprobs.device)[:, None]
+        mask = (ar >= start) & (ar < start + length)          # continuation positions
+        # log p(token at t) is read from the distribution at t-1
+        tgt = tokens.clamp(min=0)
+        lp = logprobs[:, :-1].gather(2, tgt[:, 1:, None]).squeeze(2)   # [chunk, T-1]
+        m = mask[:, 1:].to(lp.dtype)
+        denom = m.sum(dim=1).clamp(min=1.0)
+        out.append(((lp * m).sum(dim=1) / denom).detach())     # length-normalised
+    return torch.cat(out, dim=0)
 
 
 def _continuation_batch(model, prompts: Sequence[str], objects: Sequence[str]) -> ContinuationBatch:

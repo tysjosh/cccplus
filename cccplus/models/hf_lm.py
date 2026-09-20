@@ -26,6 +26,7 @@ list. Signature coordinates are indexed by prompt, not by token.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Sequence, Tuple
 
@@ -57,6 +58,13 @@ _MLP_NAMES = ("mlp", "feed_forward")
 _OPROJ_NAMES = ("o_proj", "dense", "c_proj", "out_proj")
 
 SUBLAYERS = ("resid_pre", "attn_out", "mlp_out", "resid_post")
+
+# Prompts per forward pass when logits are needed. The logit tensor is
+# batch * tokens * vocab, and modern vocabularies are large enough that an unbatched
+# forward over a full prompt set does not fit: Gemma-3's 262k vocab needs ~23 GiB in
+# bf16 for 2400 prompts of 20 tokens, Llama-3.2's 128k needs ~11 GiB. Activation reads
+# are unaffected (d_model is ~100x smaller than a vocabulary) and stay unbatched.
+_LOGIT_CHUNK = int(os.environ.get("CCC_LOGIT_CHUNK", "16"))
 
 
 def _resolve(root: torch.nn.Module, dotted: str):
@@ -354,7 +362,8 @@ class HFCausalLM(HookedModel):
 
     def _register(self, sites: Sequence[Site], batch: PromptBatch,
                   collect: Optional[Dict[str, torch.Tensor]],
-                  patches: Dict[str, Tuple[torch.Tensor, object]]):
+                  patches: Dict[str, Tuple[torch.Tensor, object]],
+                  rows: Optional[torch.Tensor] = None):
         handles = []
         B = batch.tokens.shape[0]
         ar = torch.arange(B, device=batch.tokens.device)
@@ -370,7 +379,13 @@ class HFCausalLM(HookedModel):
                 if key in patches:
                     pos, fn = patches[key]
                     cur = t[ar, pos]
-                    new = fn(cur.to(torch.float32)).to(t.dtype)
+                    # A patch may close over a per-prompt tensor. When the forward pass is
+                    # split into row chunks, such a function has to be told which rows it
+                    # is seeing; those declare themselves with `row_aware`.
+                    if rows is not None and getattr(fn, "row_aware", False):
+                        new = fn(cur.to(torch.float32), rows).to(t.dtype)
+                    else:
+                        new = fn(cur.to(torch.float32)).to(t.dtype)
                     t = t.clone()
                     t[ar, pos] = new
                 return t
@@ -409,26 +424,77 @@ class HFCausalLM(HookedModel):
 
     @torch.no_grad()
     def logits(self, batch: PromptBatch, patches: Sequence[Patch] = ()) -> torch.Tensor:
-        """Readout-position logits [B, vocab] under zero or more patches."""
-        full = self.full_logits(batch, patches)
-        pos = resolve_positions(batch.readout, batch).to(full.device)
-        return full[torch.arange(full.shape[0], device=full.device), pos]
+        """Readout-position logits [B, vocab] under zero or more patches.
+
+        Only the readout row of each prompt is kept, and it is taken *inside* the chunk
+        loop, so the full [B, T, V] tensor is never materialised.
+        """
+        pos_all = resolve_positions(batch.readout, batch)
+        parts = []
+        for rows, chunk_logits in self.iter_full_logits(batch, patches):
+            p = pos_all[rows].to(chunk_logits.device)
+            sel = chunk_logits[torch.arange(chunk_logits.shape[0], device=chunk_logits.device), p]
+            parts.append(sel.to(torch.float32))
+        return torch.cat(parts, dim=0)
+
+    @torch.no_grad()
+    def iter_full_logits(
+        self, batch: PromptBatch, patches: Sequence[Patch] = (), chunk: Optional[int] = None
+    ):
+        """Yield ``(row_indices, logits[chunk, T, V])`` a slice of prompts at a time.
+
+        A single forward over every prompt allocates ``B * T * vocab`` and these
+        vocabularies are large: at 2400 prompts and 20 tokens that is 23 GiB in bf16 for
+        Gemma-3's 262k vocab and 11 GiB for Llama-3.2's 128k, before any float32 cast.
+        Callers that reduce over the vocabulary (a readout row, or a gathered target
+        token) should consume this and reduce per chunk, which bounds peak memory at
+        ``chunk * T * vocab`` regardless of how many prompts were requested.
+
+        Tune with the ``CCC_LOGIT_CHUNK`` environment variable.
+        """
+        n = len(batch)
+        size = max(1, min(int(chunk or _LOGIT_CHUNK), n))
+        # A patch that closes over a per-prompt tensor can only be chunked if it accepts
+        # the row indices. Rather than risk slicing one incorrectly, fall back to a single
+        # pass when any patch is not row-aware: wrong numbers are worse than a large
+        # allocation, and the paths that matter for memory (unpatched screening, and the
+        # Eq. 6 interventions) are both row-aware.
+        if any(not getattr(p.fn, "row_aware", False) for p in patches):
+            size = n
+        # Patch positions are resolved once against the full batch, then sliced, so a
+        # chunk sees exactly the positions its rows would have seen unchunked.
+        resolved = [
+            (p, p.positions if p.positions is not None
+                else resolve_positions(p.site.token, batch))
+            for p in patches
+        ]
+        sites = [p.site for p in patches]
+        for lo in range(0, n, size):
+            hi = min(lo + size, n)
+            rows = torch.arange(lo, hi)
+            sub = batch.subset(rows)
+            idx: Dict[str, Tuple[torch.Tensor, object]] = {
+                str(p.site): (pos[lo:hi].to(self.device), p.fn) for p, pos in resolved
+            }
+            handles = self._register(sites, sub, None, idx, rows=rows)
+            try:
+                out = self.model(input_ids=sub.tokens.to(self.device),
+                                 attention_mask=sub.mask.to(self.device), use_cache=False)
+            finally:
+                for h in handles:
+                    h.remove()
+            yield rows, out.logits
 
     @torch.no_grad()
     def full_logits(self, batch: PromptBatch, patches: Sequence[Patch] = ()) -> torch.Tensor:
-        idx: Dict[str, Tuple[torch.Tensor, object]] = {}
-        for p in patches:
-            pos = p.positions if p.positions is not None else resolve_positions(p.site.token, batch)
-            idx[str(p.site)] = (pos.to(self.device), p.fn)
-        sites = [p.site for p in patches]
-        handles = self._register(sites, batch, None, idx)
-        try:
-            out = self.model(input_ids=batch.tokens.to(self.device),
-                             attention_mask=batch.mask.to(self.device), use_cache=False)
-        finally:
-            for h in handles:
-                h.remove()
-        return out.logits.to(torch.float32)
+        """Full [B, T, vocab] logits in float32.
+
+        Retained for callers that genuinely need every position. Prefer
+        ``iter_full_logits`` and reduce per chunk: concatenating here reassembles the
+        very tensor whose size caused an out-of-memory failure on the larger stratum.
+        """
+        return torch.cat([c.to(torch.float32) for _rows, c in self.iter_full_logits(batch, patches)],
+                         dim=0)
 
     # -------------------------------------------------------------- tokenising
     def encode(self, texts: Sequence[str], max_length: Optional[int] = None) -> PromptBatch:

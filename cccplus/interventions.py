@@ -31,6 +31,22 @@ from .models.base import HookedModel, Patch, PromptBatch, resolve_positions
 from .tasks.base import Task, TaskData
 
 PRIMARY = "counterfactual_patch"
+
+
+def _additive_patch(add: torch.Tensor):
+    """An additive patch that survives a chunked forward pass.
+
+    ``add`` holds one row per prompt, so when the model splits the batch it must be
+    sliced to the rows being processed. The ``row_aware`` marker is what tells the model
+    it is safe to chunk at all: a patch without it is run in a single pass, because
+    silently pairing the wrong rows would corrupt every effect it produces.
+    """
+    def fn(cur: torch.Tensor, rows: Optional[torch.Tensor] = None, add=add) -> torch.Tensor:
+        a = add if rows is None else add.index_select(0, rows.to(add.device))
+        return cur + a.to(cur.dtype)
+
+    fn.row_aware = True
+    return fn
 ROBUSTNESS = ("mean_ablation", "norm_matched_steering")
 
 
@@ -115,37 +131,31 @@ class CausalProbe:
 
     # ---------------------------------------------------------- intervention
     def _patch_fn(self, mech: Mechanism, setting: Setting):
+        """Build the additive patch for one intervention arm.
+
+        Every arm reduces to ``cur + add`` with a per-prompt ``add``. Note that the
+        mean-ablation target and the steering direction are batch statistics: they are
+        computed over the whole prompt set *here*, before the forward pass is split into
+        chunks, so chunking cannot change them.
+        """
         clean, cf = self.acts(mech.site)
         V = mech.V.to(clean.dtype)
         if setting.kind == PRIMARY:
-            delta = (cf - clean) @ V @ V.T
-            add = setting.alpha * delta
-
-            def fn(cur: torch.Tensor, add=add) -> torch.Tensor:
-                return cur + add.to(cur.dtype)
-
+            add = setting.alpha * ((cf - clean) @ V @ V.T)
         elif setting.kind == "mean_ablation":
             mean = clean.mean(dim=0, keepdim=True)
-            target = (mean - clean) @ V @ V.T
-            add = setting.alpha * target
-
-            def fn(cur: torch.Tensor, add=add) -> torch.Tensor:
-                return cur + add.to(cur.dtype)
-
+            add = setting.alpha * ((mean - clean) @ V @ V.T)
         elif setting.kind == "norm_matched_steering":
             delta = (cf - clean) @ V @ V.T
             mean_dir = delta.mean(dim=0, keepdim=True)
-            nrm = mean_dir.norm().clamp_min(1e-12)
-            unit = mean_dir / nrm
+            unit = mean_dir / mean_dir.norm().clamp_min(1e-12)
             scale = delta.norm(dim=1, keepdim=True)           # match per-prompt patch norm
             add = setting.alpha * scale * unit
-
-            def fn(cur: torch.Tensor, add=add) -> torch.Tensor:
-                return cur + add.to(cur.dtype)
-
         else:
             raise ValueError(f"unknown intervention kind: {setting.kind}")
-        return fn
+        return _additive_patch(add)
+
+    # (see module-level _additive_patch for the row-aware closure)
 
     def patch(self, mech: Mechanism, setting: Setting) -> Patch:
         pos = resolve_positions(mech.site.token, self.data.clean)
