@@ -163,12 +163,21 @@ class CausalProbe:
 
     # --------------------------------------------------------------- effects
     def effect(self, mech: Mechanism, setting: Setting) -> torch.Tensor:
-        """Eq. 1: per-prompt causal effect Delta_T(M, m, a; x), shape [B]."""
+        """Eq. 1: per-prompt causal effect Delta_T(M, m, a; x), shape [B].
+
+        Returned on the CPU. An effect is a [B] analysis quantity, not an intermediate:
+        signatures, calibration norms and the circuit contrasts are all built from it and
+        all run on the CPU, so converting once here keeps a single boundary instead of
+        letting the model's device leak into the analysis layer. A no-op when the model is
+        already on the CPU, and a negligible transfer otherwise.
+        """
         patches = [self.patch(mech, setting)]
         if self._full:
-            return self.task.score_full(self.model, self.data, patches) - self._clean_score
-        logits = self.model.logits(self.data.clean, patches)
-        return self.task.score(logits, self.data) - self._clean_score
+            out = self.task.score_full(self.model, self.data, patches) - self._clean_score
+        else:
+            logits = self.model.logits(self.data.clean, patches)
+            out = self.task.score(logits, self.data) - self._clean_score
+        return out.detach().cpu()
 
     def effects(self, mech: Mechanism, settings: Sequence[Setting]) -> Dict[str, torch.Tensor]:
         return {s.key: self.effect(mech, s) for s in settings}

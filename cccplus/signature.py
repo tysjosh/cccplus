@@ -52,7 +52,13 @@ class CausalSignature:
         rows = [probe.effect(mech, s) for s in settings]
         return cls(
             setting_keys=[s.key for s in settings],
-            effects=torch.stack([r.detach().to(torch.float64) for r in rows], dim=0),
+            # Signatures are analysis artifacts: small, compared, cached, hashed and
+            # serialised. Pinning them to the CPU at construction keeps every downstream
+            # consumer on one device, rather than inheriting whichever device the model
+            # happened to run on.
+            effects=torch.stack(
+                [r.detach().to(device="cpu", dtype=torch.float64) for r in rows], dim=0
+            ),
             scale=float(scale),
             model=probe.model.name,
             mechanism=mech.key(),
@@ -121,16 +127,23 @@ def signature_weights(
 
 
 def weighted_norm(z: torch.Tensor, w: torch.Tensor) -> float:
-    """||z||_w = sqrt( sum_q w_q z_q^2 )."""
-    z = z.to(torch.float64)
+    """||z||_w = sqrt( sum_q w_q z_q^2 ).
+
+    Signatures are CPU artifacts (see ``CausalSignature.measure``) while weights are
+    built on the CPU too, so this is normally a no-op. The coercion is kept because the
+    effects that feed a signature originate on whatever device the model ran on, and a
+    device mismatch here is a crash rather than a wrong number.
+    """
+    z = z.to(device="cpu", dtype=torch.float64)
+    w = w.to(device="cpu", dtype=torch.float64)
     return float(torch.sqrt(torch.clamp((w * z * z).sum(), min=0.0)))
 
 
 # ----------------------------------------------------------------- distances
 def d_shape(s: torch.Tensor, t: torch.Tensor, w: torch.Tensor, eta: float) -> float:
     """Eq. 4: weighted distance between direction-normalised signatures."""
-    s = s.to(torch.float64)
-    t = t.to(torch.float64)
+    s = s.to(device="cpu", dtype=torch.float64)
+    t = t.to(device="cpu", dtype=torch.float64)
     if s.shape != t.shape:
         raise ValueError(f"signature shapes differ: {tuple(s.shape)} vs {tuple(t.shape)}")
     sn = max(weighted_norm(s, w), eta)
