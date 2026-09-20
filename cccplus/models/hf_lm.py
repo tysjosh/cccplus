@@ -26,6 +26,7 @@ list. Signature coordinates are indexed by prompt, not by token.
 
 from __future__ import annotations
 
+import inspect
 import os
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Sequence, Tuple
@@ -65,6 +66,11 @@ SUBLAYERS = ("resid_pre", "attn_out", "mlp_out", "resid_post")
 # bf16 for 2400 prompts of 20 tokens, Llama-3.2's 128k needs ~11 GiB. Activation reads
 # are unaffected (d_model is ~100x smaller than a vocabulary) and stay unbatched.
 _LOGIT_CHUNK = int(os.environ.get("CCC_LOGIT_CHUNK", "16"))
+
+# Prompts per forward pass when only activations are wanted. Larger than the logit chunk
+# because the collected tensors are one position per prompt, and because the LM head is
+# sliced down to a single position for these passes.
+_READ_CHUNK = int(os.environ.get("CCC_READ_CHUNK", "32"))
 
 
 def _resolve(root: torch.nn.Module, dotted: str):
@@ -413,18 +419,55 @@ class HFCausalLM(HookedModel):
         return handles
 
     # ------------------------------------------------------------- interface
-    @torch.no_grad()
-    def read(self, batch: PromptBatch, sites: Sequence[Site]) -> Dict[str, torch.Tensor]:
-        sites = list(sites)
-        out: Dict[str, torch.Tensor] = {}
-        handles = self._register(sites, batch, out, {})
+    def _no_logits_kwargs(self) -> Dict[str, int]:
+        """Ask the model to run the LM head over a single position.
+
+        ``read`` wants hidden states, which arrive through hooks; the logits a causal LM
+        computes on the way out are discarded immediately. With a 262k vocabulary that
+        discarded tensor is tens of GiB. Transformers takes a parameter to slice the head
+        down to the last positions -- the name changed between releases, so both are
+        probed, and an unrecognised signature simply means no saving.
+        """
         try:
-            self.model(input_ids=batch.tokens.to(self.device),
-                       attention_mask=batch.mask.to(self.device), use_cache=False)
-        finally:
-            for h in handles:
-                h.remove()
-        return out
+            params = inspect.signature(self.model.forward).parameters
+        except (TypeError, ValueError):
+            return {}
+        for name in ("logits_to_keep", "num_logits_to_keep"):
+            if name in params:
+                return {name: 1}
+        return {}
+
+    @torch.no_grad()
+    def read(
+        self, batch: PromptBatch, sites: Sequence[Site], chunk: Optional[int] = None
+    ) -> Dict[str, torch.Tensor]:
+        """In-subspace activations at each site, [B, d_model] per site.
+
+        Chunked for the same reason as ``logits``, and with the LM head suppressed: a
+        factual-recall calibration split is long enough that the throwaway logits alone
+        exceeded GPU memory on the larger stratum. Collected activations are small --
+        one position per prompt -- so only the forward pass is split.
+        """
+        sites = list(sites)
+        n = len(batch)
+        size = max(1, min(int(chunk or _READ_CHUNK), n))
+        fwd_kwargs = self._no_logits_kwargs()
+        parts: Dict[str, List[torch.Tensor]] = {}
+        for lo in range(0, n, size):
+            hi = min(lo + size, n)
+            sub = batch.subset(torch.arange(lo, hi))
+            got: Dict[str, torch.Tensor] = {}
+            handles = self._register(sites, sub, got, {})
+            try:
+                self.model(input_ids=sub.tokens.to(self.device),
+                           attention_mask=sub.mask.to(self.device),
+                           use_cache=False, **fwd_kwargs)
+            finally:
+                for h in handles:
+                    h.remove()
+            for k, v in got.items():
+                parts.setdefault(k, []).append(v)
+        return {k: torch.cat(v, dim=0) for k, v in parts.items()}
 
     @torch.no_grad()
     def logits(self, batch: PromptBatch, patches: Sequence[Patch] = ()) -> torch.Tensor:
