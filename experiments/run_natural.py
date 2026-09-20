@@ -44,6 +44,7 @@ from cccplus.pipelines.natural import (
     save_store,
     screen_factual_across_models,
     screen_ioi_across_models,
+    SharedPrompts,
 )
 from cccplus.pipelines.evaluate import SignatureCache, fit_translator_pair
 from cccplus.reporting import (
@@ -87,6 +88,9 @@ def parse_args():
     ap.add_argument("--trust-remote-code", action="store_true")
     ap.add_argument("--free-between-models", action="store_true",
                     help="drop weights after each model in the corpus phase")
+    ap.add_argument("--fresh", action="store_true",
+                    help="discard cached screening/gated mechanisms and any partially "
+                         "measured mappings, and recompute phase 2 from scratch")
     ap.add_argument("--self-test", action="store_true",
                     help="substitute randomly initialised models of the same families, so the "
                          "whole runner can be exercised offline with no checkpoints")
@@ -103,6 +107,68 @@ def open_model(args, key: str, repo: str) -> HFCausalLM:
         return HFCausalLM.from_random_config(kind, key, device="cpu")
     return HFCausalLM.load(repo, name=key, device=args.device, dtype=args.dtype,
                            trust_remote_code=args.trust_remote_code)
+
+
+def _prefix_key(mf: FrozenManifest, args, task_name: str) -> str:
+    """Identity of the deterministic, expensive prefix of phase 2 for one task.
+
+    Screening and source-mechanism gating depend only on the manifest, the stratum, the
+    cached activation stores and these CLI knobs -- not on translators or seeds. Anything
+    that would change their result has to appear here, or a stale cache would be reused.
+    """
+    return str(stable_seed(
+        mf.hash, args.stratum, task_name, args.site_depths, args.max_source_mechanisms,
+        args.facts_source, bool(args.self_test), args.dtype, args.device.split(":")[0],
+    ) % (2 ** 31))
+
+
+def _load_prefix(cache: Path, key: str, task_name: str):
+    p = cache / f"prefix_{task_name}_{key}.pt"
+    if not p.exists():
+        return None
+    try:
+        got = torch.load(p, map_location="cpu", weights_only=False)
+        return got if got.get("version") == 1 else None
+    except Exception as exc:  # noqa: BLE001
+        print(f"  [prefix] ignoring unreadable cache ({exc})", flush=True)
+        return None
+
+
+def _save_prefix(cache: Path, key: str, task_name: str, payload: dict) -> None:
+    p = cache / f"prefix_{task_name}_{key}.pt"
+    try:
+        torch.save({"version": 1, **payload}, p)
+    except Exception as exc:  # noqa: BLE001
+        print(f"  [prefix] could not cache prefix ({exc})", flush=True)
+
+
+def _partial_path(cache: Path, args) -> Path:
+    return cache / f"partial_{'_'.join(sorted(args.tasks))}.pt"
+
+
+def _load_partial(cache: Path, args):
+    """Records from mappings already measured, so a late failure is not total."""
+    p = _partial_path(cache, args)
+    if not p.exists():
+        return [], set(), {}
+    try:
+        got = torch.load(p, map_location="cpu", weights_only=False)
+        if got.get("version") != 1:
+            return [], set(), {}
+        print(f"  [resume] {len(got['records'])} records from "
+              f"{len(got['done'])} completed mappings", flush=True)
+        return list(got["records"]), set(got["done"]), dict(got.get("task_reports", {}))
+    except Exception as exc:  # noqa: BLE001
+        print(f"  [resume] ignoring unreadable partial file ({exc})", flush=True)
+        return [], set(), {}
+
+
+def _save_partial(cache: Path, args, records, done, task_reports) -> None:
+    try:
+        torch.save({"version": 1, "records": records, "done": sorted(done),
+                    "task_reports": task_reports}, _partial_path(cache, args))
+    except Exception as exc:  # noqa: BLE001
+        print(f"  [resume] could not write partial file ({exc})", flush=True)
 
 
 def _permuted_control(dest_model, dest_mechs, candidate, seed: int):
@@ -183,8 +249,11 @@ def phase_evaluate(args, mf, matrix, cache: Path) -> int:
             return 2
         stores[key], docs[key] = load_store(p)
 
-    all_records: List = []
-    task_reports: Dict[str, object] = {}
+    if args.fresh:
+        for stale in list(cache.glob("prefix_*.pt")) + list(cache.glob("partial_*.pt")):
+            stale.unlink()
+        print("  [resume] --fresh: cleared cached prefixes and partial records", flush=True)
+    all_records, done_groups, task_reports = _load_partial(cache, args)
 
     for task_name in args.tasks:
         print(f"\n=== {task_name} ===", flush=True)
@@ -192,13 +261,21 @@ def phase_evaluate(args, mf, matrix, cache: Path) -> int:
         for key, repo in matrix.items():
             models[key] = open_model(args, key, repo)
 
+        prefix_key = _prefix_key(mf, args, task_name)
+        cached_prefix = _load_prefix(cache, prefix_key, task_name)
+
         if task_name == "ioi":
             task = IOITask()
             cfg = mf.path_of("natural.ioi")
             n_pairs = 64 if args.self_test else int(cfg["analysis_pairs"])
             examples = build_ioi_examples(n_pairs, stable_seed(master, "ioi"))
-            shared = screen_ioi_across_models(models, examples, task,
-                                             float(cfg["min_clean_accuracy"]))
+            if cached_prefix is not None:
+                shared = SharedPrompts(keep=list(cached_prefix["keep"]),
+                                       report=dict(cached_prefix["report"]))
+                print("  [prefix] reusing cached screening", flush=True)
+            else:
+                shared = screen_ioi_across_models(models, examples, task,
+                                                 float(cfg["min_clean_accuracy"]))
             print(f"  screening: {shared.report}", flush=True)
             kept = [examples[i] for i in shared.keep]
             fam = np.asarray([e.name_group for e in kept])
@@ -212,7 +289,12 @@ def phase_evaluate(args, mf, matrix, cache: Path) -> int:
             facts, fprov = build_fact_set(n_facts, stable_seed(master, "facts"),
                                           source="builtin" if args.self_test else args.facts_source,
                                           cache_dir=str(cache))
-            shared = screen_factual_across_models(models, facts, task)
+            if cached_prefix is not None:
+                shared = SharedPrompts(keep=list(cached_prefix["keep"]),
+                                       report=dict(cached_prefix["report"]))
+                print("  [prefix] reusing cached screening", flush=True)
+            else:
+                shared = screen_factual_across_models(models, facts, task)
             print(f"  facts: {fprov}\n  screening: {shared.report}", flush=True)
             kept = [facts[i] for i in shared.keep]
             fam = np.asarray([f"{f.relation}|{f.subject}" for f in kept])
@@ -229,11 +311,27 @@ def phase_evaluate(args, mf, matrix, cache: Path) -> int:
         cal = Calibrator(mf)
         probes: Dict[str, Dict[str, CausalProbe]] = {}
         mechs: Dict[str, List[Mechanism]] = {}
+
+        # Probes are always rebuilt: they hold live models and task data. The cache covers
+        # the part that costs real time -- one intervention per candidate mechanism, per
+        # model, to apply the source gate.
         for key, m in models.items():
             probes[key] = {}
             for split in ("calibration", "test"):
                 d = data_for(m, parts[split])
                 probes[key][split] = CausalProbe(m, task, d, collect_kl=False)
+
+        if cached_prefix is not None:
+            mechs = {k: list(v) for k, v in cached_prefix["mechs"].items()}
+            for rec in cached_prefix["controls"]:
+                cal.add_control(rec)
+            for gkey, norms in cached_prefix["gated_norms"].items():
+                cal.gated_norms.setdefault(gkey, []).extend(list(norms))
+            for key in matrix:
+                print(f"  [prefix] [{key}] {len(mechs.get(key, []))} source-gated "
+                      f"mechanisms (cached)", flush=True)
+
+        for key, m in ({} if cached_prefix is not None else models).items():
             layers = sorted({s.layer for s in m.site_grid(("attn_out",), args.site_depths)})
             if task_name == "ioi":
                 cand = ioi_source_mechanisms(m, layers=layers)
@@ -262,6 +360,17 @@ def phase_evaluate(args, mf, matrix, cache: Path) -> int:
                 w = signature_weights(sig.n_settings, sig.n_prompts, ws)
                 cal.add_gated_norm(m.name, task.name, weighted_norm(sig.vector(), w))
 
+        if cached_prefix is None:
+            _save_prefix(cache, prefix_key, task_name, {
+                "keep": list(shared.keep),
+                "report": dict(shared.report),
+                "provenance": provenance,
+                "mechs": mechs,
+                "controls": list(cal.controls),
+                "gated_norms": {k: list(v) for k, v in cal.gated_norms.items()},
+            })
+            print(f"  [prefix] cached screening + gated mechanisms for {task_name}", flush=True)
+
         bounds = cal.pooled(bound_mode)
         sigcache = SignatureCache(settings)
 
@@ -275,6 +384,10 @@ def phase_evaluate(args, mf, matrix, cache: Path) -> int:
                 )
                 for tname in args.translators:
                     for seed in args.seeds:
+                        group = f"{task_name}|{src_key}->{dst_key}|{tname}|s{seed}"
+                        if group in done_groups:
+                            print(f"  [resume] skipping {group} (already measured)", flush=True)
+                            continue
                         pair = fit_translator_pair(
                             tname,
                             stores[src_key].subset(fwd_i), stores[dst_key].subset(fwd_i),
@@ -321,6 +434,11 @@ def phase_evaluate(args, mf, matrix, cache: Path) -> int:
                                 )
                                 rec.diagnostics["independent_legs"] = float(ind.get("independent", False))
                                 all_records.append(rec)
+                        # Flushed per mapping so a failure late in the six costs one
+                        # mapping, not the whole phase.
+                        done_groups.add(group)
+                        task_reports[task_name] = provenance
+                        _save_partial(cache, args, all_records, done_groups, task_reports)
                     print(f"  [{src_key} -> {dst_key}] {tname}: "
                           f"{len(all_records)} records so far", flush=True)
         for m in models.values():
