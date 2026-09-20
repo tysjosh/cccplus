@@ -43,7 +43,7 @@ def _additive_patch(add: torch.Tensor):
     """
     def fn(cur: torch.Tensor, rows: Optional[torch.Tensor] = None, add=add) -> torch.Tensor:
         a = add if rows is None else add.index_select(0, rows.to(add.device))
-        return cur + a.to(cur.dtype)
+        return cur + a.to(device=cur.device, dtype=cur.dtype)
 
     fn.row_aware = True
     return fn

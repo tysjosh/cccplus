@@ -383,9 +383,13 @@ class HFCausalLM(HookedModel):
                     # split into row chunks, such a function has to be told which rows it
                     # is seeing; those declare themselves with `row_aware`.
                     if rows is not None and getattr(fn, "row_aware", False):
-                        new = fn(cur.to(torch.float32), rows).to(t.dtype)
+                        new = fn(cur.to(torch.float32), rows)
                     else:
-                        new = fn(cur.to(torch.float32)).to(t.dtype)
+                        new = fn(cur.to(torch.float32))
+                    # Patch functions close over activations that were read back to the
+                    # CPU, so normalise device as well as dtype. Casting dtype alone was
+                    # silently fine while every stage ran on CPU.
+                    new = new.to(device=t.device, dtype=t.dtype)
                     t = t.clone()
                     t[ar, pos] = new
                 return t

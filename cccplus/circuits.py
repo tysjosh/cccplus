@@ -26,7 +26,7 @@ from typing import Callable, Dict, List, Optional, Sequence, Tuple
 import numpy as np
 import torch
 
-from .interventions import CausalProbe, Setting
+from .interventions import CausalProbe, Setting, _additive_patch
 from .mechanisms import Mechanism, Site, subspace_similarity
 from .models.base import Patch, resolve_positions
 from .signature import CausalSignature, compare_signatures, prompt_key_of
@@ -71,11 +71,9 @@ def _multi_patch(probe: CausalProbe, mechs: Sequence[Mechanism], setting: Settin
         delta = ((cf - clean) @ V) @ V.T
         add = setting.alpha * delta
         pos = resolve_positions(site.token, probe.data.clean)
-
-        def fn(cur: torch.Tensor, add=add) -> torch.Tensor:
-            return cur + add.to(cur.dtype)
-
-        patches.append(Patch(site=site, fn=fn, positions=pos))
+        # Shares the single additive-patch implementation, so multi-site interventions get
+        # the same device handling and row-awareness as the single-site ones.
+        patches.append(Patch(site=site, fn=_additive_patch(add), positions=pos))
     return patches
 
 
