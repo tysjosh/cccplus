@@ -30,6 +30,9 @@ tokenizers>=0.21,<=0.23
 safetensors>=0.4.3
 huggingface-hub>=0.34,<1.0   # checkpoint download + auth for the gated Gemma/Llama repos
 
-# Only needed to fit translators on real text rather than the synthetic fallback
-# (cccplus/tasks/corpus.py falls back to generated filler when this is absent).
-# datasets==3.0.1
+# Required for a faithful natural-model run: it supplies the wikitext-103 translator
+# corpus with real article boundaries as document ids. Without it, load_corpus() falls
+# back to generated filler and only records a warning in the provenance -- which
+# understates translator quality across the entire stage and is easy to miss in a log.
+# Pass `--corpus-source wikitext` to make a missing corpus raise instead of degrade.
+datasets>=2.19
