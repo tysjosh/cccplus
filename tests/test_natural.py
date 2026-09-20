@@ -181,6 +181,42 @@ def test_corpus_rows_carry_documents_and_split_disjointly():
     )
 
 
+def test_fact_templates_are_data_not_format_strings():
+    """Regression: CounterFact templates were passed to str.format.
+
+    The larger stratum crashed on "Single '}' encountered in format string" after IOI had
+    completed. CounterFact has ~21k records and only the subject is a slot; any other
+    brace makes format() raise, or worse, silently reinterpret dataset text as a field.
+    """
+    from cccplus.tasks.factual import Fact
+
+    for tpl in ("{s} was written in C++ }",      # stray closing brace -> ValueError
+                "The {s} set {a, b} is",          # braced literal      -> KeyError
+                "{s} scored 100% in {1}"):        # positional field    -> IndexError
+        raised = False
+        try:
+            tpl.format(s="Ada")
+        except Exception:
+            raised = True
+        assert raised, f"expected format() to fail on {tpl!r}; test no longer covers the bug"
+        got = Fact("Ada", "P1", "x", "Bob", "y", tpl, 0).prompt()
+        assert got == tpl.replace("{s}", "Ada")
+        assert "Ada" in got
+
+    # the subject must actually appear; a slotless template is a hard error, never a
+    # prompt that silently omits the thing being tested
+    try:
+        Fact("Ada", "P1", "x", "Bob", "y", "no slot", 0).prompt()
+    except ValueError as exc:
+        assert "{s}" in str(exc)
+    else:
+        raise AssertionError("a template without a subject slot must raise")
+
+    # counterfactual prompts substitute the other subject in the same template
+    f = Fact("Ada", "P1", "x", "Bob", "y", "{s} works at {x}", 0)
+    assert f.prompt() == "Ada works at {x}" and f.cf_prompt() == "Bob works at {x}"
+
+
 def test_permuted_control_stays_in_the_destination_index_space():
     """Regression: the control was built from the source mechanism, destination model.
 

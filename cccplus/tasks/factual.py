@@ -139,11 +139,28 @@ class Fact:
     template: str
     template_idx: int
 
+    SLOT = "{s}"
+
     def prompt(self) -> str:
-        return self.template.format(s=self.subject)
+        return self._fill(self.subject)
 
     def cf_prompt(self) -> str:
-        return self.template.format(s=self.cf_subject)
+        return self._fill(self.cf_subject)
+
+    def _fill(self, subject: str) -> str:
+        """Substitute the subject without interpreting the rest of the template.
+
+        ``str.format`` is the wrong tool here: templates come from CounterFact, and any
+        record containing a brace that is not the subject slot makes it raise (or, worse,
+        interpret dataset text as a format field). Plain replacement treats the template
+        as data, which is what it is.
+        """
+        if self.SLOT not in self.template:
+            raise ValueError(
+                f"template for ({self.subject!r}, {self.relation!r}) has no {self.SLOT} "
+                f"slot: {self.template!r}"
+            )
+        return self.template.replace(self.SLOT, subject)
 
 
 def build_facts(
@@ -355,6 +372,7 @@ def load_counterfact(
     order = rng.permutation(len(blob))
     facts: List[Fact] = []
     seen = set()
+    n_no_slot = 0
     for i in order:
         rec = blob[int(i)]
         rr = rec["requested_rewrite"]
@@ -371,10 +389,16 @@ def load_counterfact(
         if donor is None or donor == subj:
             continue
         # requested_rewrite prompt uses '{}' for the subject; paraphrases are full text
-        templates = [rr["prompt"].replace("{}", "{s}")]
+        templates = [rr["prompt"].replace("{}", Fact.SLOT)]
         for p in rec.get("paraphrase_prompts", [])[: max_paraphrases - 1]:
             if subj in p:
-                templates.append(p.replace(subj, "{s}"))
+                templates.append(p.replace(subj, Fact.SLOT))
+        # A template with no subject slot would silently score a prompt that never names
+        # its subject, so such records are dropped and counted rather than carried.
+        templates = [t for t in templates if Fact.SLOT in t]
+        if not templates:
+            n_no_slot += 1
+            continue
         seen.add(key)
         for ti, tpl in enumerate(templates[:max_paraphrases]):
             facts.append(Fact(subj, rel, obj, donor, dist, tpl, ti))
@@ -386,6 +410,7 @@ def load_counterfact(
         "n_records": len(blob),
         "n_facts": len({(f.subject, f.relation) for f in facts}),
         "n_prompts": len(facts),
+        "n_dropped_no_subject_slot": n_no_slot,
     }
     return facts, prov
 
