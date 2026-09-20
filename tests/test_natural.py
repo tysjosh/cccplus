@@ -181,6 +181,50 @@ def test_corpus_rows_carry_documents_and_split_disjointly():
     )
 
 
+def test_decoder_layers_found_behind_a_multimodal_wrapper():
+    """Gemma-3 4B+ loads as Gemma3ForConditionalGeneration, not Gemma3ForCausalLM.
+
+    Its decoder sits behind a vision-language container, so none of the single-level
+    paths match. The vision tower has the same attention+MLP shape as the decoder, so
+    discovery must not simply take the longest ModuleList.
+    """
+    import torch.nn as nn
+
+    from cccplus.models.hf_lm import _discover_layers, _resolve
+
+    class Blk(nn.Module):
+        def __init__(self, d):
+            super().__init__()
+            self.self_attn = nn.Module()
+            self.self_attn.o_proj = nn.Linear(d, d)
+            self.mlp = nn.Linear(d, d)
+
+    class Stack(nn.Module):
+        def __init__(self, n, d):
+            super().__init__()
+            self.layers = nn.ModuleList([Blk(d) for _ in range(n)])
+
+    class Wrapper(nn.Module):
+        def __init__(self, n_text, n_vision, d=64):
+            super().__init__()
+            self.model = nn.Module()
+            self.model.vision_tower = Stack(n_vision, d)
+            self.model.language_model = Stack(n_text, d)
+
+    m = Wrapper(n_text=34, n_vision=27)
+    assert _resolve(m, "model.language_model.layers") is not None, "explicit path must hit"
+    path, mods = _discover_layers(m, 34)
+    assert path == "model.language_model.layers" and len(mods) == 34
+
+    # the guard that matters: a vision tower deeper than the decoder must not win
+    path, mods = _discover_layers(Wrapper(n_text=4, n_vision=99), 4)
+    assert len(mods) == 4, f"picked the vision tower ({len(mods)} layers)"
+
+    # and with no text-config hint, a non-text path is still never chosen
+    path, _ = _discover_layers(Wrapper(n_text=4, n_vision=99), None)
+    assert "vision" not in (path or ""), f"chose a non-text stack: {path}"
+
+
 def test_dtype_argument_spans_the_transformers_rename():
     """`torch_dtype` became `dtype` in transformers 4.56.
 

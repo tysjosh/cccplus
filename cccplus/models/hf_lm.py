@@ -36,7 +36,22 @@ from ..mechanisms import Site, orthonormalize
 from .base import HookedModel, Patch, PromptBatch, resolve_positions
 
 # Attribute names per architecture family. Probed in order; the first hit wins.
-_LAYER_PATHS = ("model.layers", "gpt_neox.layers", "transformer.h", "model.decoder.layers")
+_LAYER_PATHS = (
+    "model.layers",                      # Llama, Mistral, Qwen, Gemma-3 1B (text-only)
+    "gpt_neox.layers",                   # Pythia
+    "transformer.h",                     # GPT-2
+    "model.decoder.layers",              # OPT
+    # Multimodal wrappers put the decoder behind a vision-language container. Gemma-3 4B
+    # and up load as Gemma3ForConditionalGeneration, not Gemma3ForCausalLM, and the exact
+    # nesting moved between transformers releases, so all the observed spellings are tried.
+    "model.language_model.layers",
+    "language_model.model.layers",
+    "language_model.layers",
+)
+
+# Submodule names that indicate a non-text tower, which must never be mistaken for the
+# decoder stack: a vision encoder also holds a ModuleList of attention+MLP blocks.
+_NON_TEXT_HINTS = ("vision", "visual", "image", "audio", "speech", "multi_modal")
 _ATTN_NAMES = ("self_attn", "attention", "attn")
 _MLP_NAMES = ("mlp", "feed_forward")
 _OPROJ_NAMES = ("o_proj", "dense", "c_proj", "out_proj")
@@ -58,6 +73,33 @@ def _first_attr(module: torch.nn.Module, names: Sequence[str]):
         if hasattr(module, n):
             return getattr(module, n), n
     return None, ""
+
+
+def _discover_layers(root: torch.nn.Module, expected_n: Optional[int]):
+    """Locate the decoder stack when no known path matches.
+
+    Searches for a ``ModuleList`` whose blocks carry both an attention and an MLP
+    submodule. Two guards keep it from picking the wrong stack on a multimodal
+    checkpoint, where the vision tower has the same shape: module paths naming a
+    non-text tower are skipped, and the length must equal the text config's layer
+    count. Returns ``(path, module_list)`` or ``(None, None)``.
+    """
+    best: Tuple[Optional[str], Optional[torch.nn.ModuleList]] = (None, None)
+    for path, mod in root.named_modules():
+        if not isinstance(mod, torch.nn.ModuleList) or len(mod) == 0:
+            continue
+        if any(h in path.lower() for h in _NON_TEXT_HINTS):
+            continue
+        block = mod[0]
+        if _first_attr(block, _ATTN_NAMES)[0] is None:
+            continue
+        if _first_attr(block, _MLP_NAMES)[0] is None:
+            continue
+        if expected_n is not None and len(mod) != expected_n:
+            continue
+        if best[1] is None or len(mod) > len(best[1]):
+            best = (path, mod)
+    return best
 
 
 def _transformers_at_least(version: str, major: int, minor: int) -> bool:
@@ -103,18 +145,36 @@ class HFCausalLM(HookedModel):
         for p in self.model.parameters():
             p.requires_grad_(False)
 
-        self._layers = None
-        for path in _LAYER_PATHS:
-            got = _resolve(self.model, path)
-            if got is not None:
-                self._layers = got
-                self._layers_path = path
-                break
-        if self._layers is None:
-            raise ValueError(f"could not locate decoder layers on {type(model).__name__}")
-
         cfg = model.config
         text_cfg = getattr(cfg, "text_config", cfg)      # Gemma-3 nests the text config
+        expected_n = getattr(text_cfg, "num_hidden_layers", None)
+        expected_n = int(expected_n) if expected_n is not None else None
+
+        self._layers = None
+        self._layers_path = ""
+        for path in _LAYER_PATHS:
+            got = _resolve(self.model, path)
+            if got is not None and len(got) > 0:
+                self._layers, self._layers_path = got, path
+                break
+        if self._layers is None:
+            # Unknown wrapper: fall back to structural discovery rather than failing, so a
+            # new multimodal container does not block the stage.
+            self._layers_path, self._layers = _discover_layers(self.model, expected_n)
+        if self._layers is None:
+            raise ValueError(
+                f"could not locate decoder layers on {type(model).__name__}; tried "
+                f"{list(_LAYER_PATHS)} and structural discovery for "
+                f"{expected_n} layers"
+            )
+        if expected_n is not None and len(self._layers) != expected_n:
+            raise ValueError(
+                f"located {len(self._layers)} layers at '{self._layers_path}' on "
+                f"{type(model).__name__}, but its text config declares {expected_n}. "
+                f"Refusing to continue: on a multimodal checkpoint this usually means the "
+                f"vision tower was picked up instead of the decoder."
+            )
+
         n_heads = int(getattr(text_cfg, "num_attention_heads"))
         d_model = int(getattr(text_cfg, "hidden_size"))
         self.info = HFConfigInfo(
