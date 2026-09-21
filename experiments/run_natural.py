@@ -29,7 +29,12 @@ import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from cccplus.analysis import analyse, coupling_stats, signature_agreement
+from cccplus.analysis import (
+    analyse,
+    coupling_stats,
+    rescore_with_bounds,
+    signature_agreement,
+)
 from cccplus.calibration import Calibrator, ControlRecord
 from cccplus.config import FrozenManifest, set_all_seeds, stable_seed, write_json
 from cccplus.interventions import CausalProbe, Setting, null_direction_mechanisms, settings_from_manifest
@@ -46,7 +51,12 @@ from cccplus.pipelines.natural import (
     screen_ioi_across_models,
     SharedPrompts,
 )
-from cccplus.pipelines.evaluate import SignatureCache, fit_translator_pair
+from cccplus.pipelines.evaluate import (
+    SignatureCache,
+    fit_translator_pair,
+    negatives_from,
+    positives_from,
+)
 from cccplus.reporting import (
     Table,
     coupling_table,
@@ -88,6 +98,9 @@ def parse_args():
     ap.add_argument("--trust-remote-code", action="store_true")
     ap.add_argument("--free-between-models", action="store_true",
                     help="drop weights after each model in the corpus phase")
+    ap.add_argument("--skip-self-translation", action="store_true",
+                    help="omit the identity positive control (Sec. 4.2 has no ground truth, "
+                         "so without it a zero retention cannot be attributed)")
     ap.add_argument("--fresh", action="store_true",
                     help="discard cached screening/gated mechanisms and any partially "
                          "measured mappings, and recompute phase 2 from scratch")
@@ -146,29 +159,83 @@ def _partial_path(cache: Path, args) -> Path:
     return cache / f"partial_{'_'.join(sorted(args.tasks))}.pt"
 
 
+# Bumped from 1: a partial file now carries calibration-split records as well as test
+# ones. A v1 file has no calibration paths, so reusing it would silently reproduce the
+# controls-only bounds this change exists to fix; it is discarded instead.
+_PARTIAL_VERSION = 2
+
+
 def _load_partial(cache: Path, args):
     """Records from mappings already measured, so a late failure is not total."""
     p = _partial_path(cache, args)
     if not p.exists():
-        return [], set(), {}
+        return [], set(), {}, []
     try:
         got = torch.load(p, map_location="cpu", weights_only=False)
-        if got.get("version") != 1:
-            return [], set(), {}
-        print(f"  [resume] {len(got['records'])} records from "
-              f"{len(got['done'])} completed mappings", flush=True)
-        return list(got["records"]), set(got["done"]), dict(got.get("task_reports", {}))
+        if got.get("version") != _PARTIAL_VERSION:
+            print(f"  [resume] discarding v{got.get('version')} partial file: it predates "
+                  f"calibration-split measurement", flush=True)
+            return [], set(), {}, []
+        cal = list(got.get("cal_records", []))
+        print(f"  [resume] {len(got['records'])} test and {len(cal)} calibration records "
+              f"from {len(got['done'])} completed mappings", flush=True)
+        return list(got["records"]), set(got["done"]), dict(got.get("task_reports", {})), cal
     except Exception as exc:  # noqa: BLE001
         print(f"  [resume] ignoring unreadable partial file ({exc})", flush=True)
-        return [], set(), {}
+        return [], set(), {}, []
 
 
-def _save_partial(cache: Path, args, records, done, task_reports) -> None:
+def _save_partial(cache: Path, args, records, done, task_reports, cal_records) -> None:
     try:
-        torch.save({"version": 1, "records": records, "done": sorted(done),
-                    "task_reports": task_reports}, _partial_path(cache, args))
+        torch.save({"version": _PARTIAL_VERSION, "records": records, "done": sorted(done),
+                    "task_reports": task_reports, "cal_records": cal_records},
+                   _partial_path(cache, args))
     except Exception as exc:  # noqa: BLE001
         print(f"  [resume] could not write partial file ({exc})", flush=True)
+
+
+def _fit_quality(pair) -> Dict[str, float]:
+    """Translator fit diagnostics, recorded on every path the pair produces.
+
+    Needed to tell two very different readings apart when the causal tests reject
+    everything: a translator that genuinely found no correspondence, versus one that was
+    never fitted well enough to find one. Reconstruction quality and held-out alignment
+    are properties of the fit alone, so they are available without any ground truth.
+    """
+    # Key names differ by family: the dictionary methods report fraction-of-variance-
+    # unexplained per side, Procrustes reports held-out alignment across its site maps.
+    wanted = ("fvu_a", "fvu_b", "mean_heldout_cosine", "n_fit")
+    out: Dict[str, float] = {}
+    for leg, tr in (("fwd", pair.forward), ("rev", pair.reverse_independent)):
+        info = getattr(tr, "fit_info", {}) or {}
+        for k in wanted:
+            v = info.get(k)
+            if isinstance(v, (int, float)) and not isinstance(v, bool) and np.isfinite(v):
+                out[f"{leg}_{k}"] = float(v)
+    return out
+
+
+def _fit_summary(records) -> Dict[str, Dict[str, float]]:
+    """Mean fit diagnostics per translator, for the results file."""
+    keys = ("fwd_fvu_a", "fwd_fvu_b", "rev_fvu_a", "rev_fvu_b",
+            "fwd_mean_heldout_cosine", "rev_mean_heldout_cosine", "fwd_n_fit")
+    out: Dict[str, Dict[str, float]] = {}
+    by: Dict[str, list] = {}
+    for r in records:
+        by.setdefault(r.translator, []).append(r)
+    for tname, rs in by.items():
+        d: Dict[str, float] = {"n": float(len(rs))}
+        for k in keys:
+            vals = [r.diagnostics[k] for r in rs if k in r.diagnostics]
+            if vals:
+                d[k] = float(np.mean(vals))
+        # the round trip's realised subspace recovery, which needs no labels
+        cos = [r.ret_independent.subspace_cosine for r in rs
+               if np.isfinite(getattr(r.ret_independent, "subspace_cosine", float("nan")))]
+        if cos:
+            d["return_subspace_cosine"] = float(np.mean(cos))
+        out[tname] = d
+    return out
 
 
 def _permuted_control(dest_model, dest_mechs, candidate, seed: int):
@@ -253,7 +320,7 @@ def phase_evaluate(args, mf, matrix, cache: Path) -> int:
         for stale in list(cache.glob("prefix_*.pt")) + list(cache.glob("partial_*.pt")):
             stale.unlink()
         print("  [resume] --fresh: cleared cached prefixes and partial records", flush=True)
-    all_records, done_groups, task_reports = _load_partial(cache, args)
+    all_records, done_groups, task_reports, cal_records = _load_partial(cache, args)
 
     for task_name in args.tasks:
         print(f"\n=== {task_name} ===", flush=True)
@@ -371,7 +438,11 @@ def phase_evaluate(args, mf, matrix, cache: Path) -> int:
             })
             print(f"  [prefix] cached screening + gated mechanisms for {task_name}", flush=True)
 
-        bounds = cal.pooled(bound_mode)
+        # Provisional bounds. tau_min and the response scale c_{M,T} are fitted from the
+        # controls and are final here; only the eps thresholds are provisional, because
+        # setting those needs labelled calibration-split paths that do not exist yet.
+        provisional = cal.pooled(bound_mode)
+        final_provisional = provisional      # alias used by the self-translation control
         sigcache = SignatureCache(settings)
 
         # ---- six directed mappings: every checkpoint is a source
@@ -388,71 +459,172 @@ def phase_evaluate(args, mf, matrix, cache: Path) -> int:
                         if group in done_groups:
                             print(f"  [resume] skipping {group} (already measured)", flush=True)
                             continue
+                        base_seed = stable_seed(master, src_key, dst_key, tname, seed) % (2**31)
                         pair = fit_translator_pair(
                             tname,
                             stores[src_key].subset(fwd_i), stores[dst_key].subset(fwd_i),
                             stores[src_key].subset(rev_i), stores[dst_key].subset(rev_i),
-                            models[src_key].name, models[dst_key].name,
-                            stable_seed(master, src_key, dst_key, tname, seed) % (2**31), mf,
+                            models[src_key].name, models[dst_key].name, base_seed, mf,
                         )
                         ind = pair.independence_report()
-                        src_probe = probes[src_key]["test"]
-                        dst_probe = probes[dst_key]["test"]
-                        for mech in mechs[src_key]:
-                            src_sig = sigcache.measure(
-                                src_probe, mech, bounds.c(models[src_key].name, task.name),
-                                tag=f"{src_key}|test")
-                            cand = pair.translate(mech)
-                            for tr in (pair.reverse_independent, pair.reverse_coupled):
-                                if tr is not None and hasattr(tr, "anchor_site"):
-                                    tr.anchor_site = mech.site
-                            # The permuted-destination control must be defined *in the
-                            # destination model*: a different head at one of that model's
-                            # own layers. Deriving it from the source mechanism would
-                            # index the destination's layers with a source layer number.
-                            ctrl_seed = stable_seed(master, "ctrl", src_key, dst_key, mech.label)
-                            ctrl = _permuted_control(
-                                models[dst_key], mechs[dst_key], cand, ctrl_seed
-                            )
-                            for case, candidate, label in (
-                                ("translated", cand, 1),
-                                ("permuted_destination", ctrl, 0),
-                            ):
-                                rec = measure_path(
-                                    program=task_name, task_name=task.name,
-                                    source_probe=src_probe, dest_probe=dst_probe,
-                                    settings=settings, source_mech=mech, source_signature=src_sig,
-                                    candidate=candidate,
-                                    reverse_independent=lambda mm: pair.back(mm, coupled=False),
-                                    reverse_coupled=lambda mm: pair.back(mm, coupled=True),
-                                    bounds=bounds, translator=tname, seed=seed,
-                                    case=case, label=label,
-                                    family_key=f"{task_name}|{src_key}->{dst_key}",
-                                    weight_scheme=ws, eta=eta,
-                                    sig_fn=lambda p, mm, sc: sigcache.measure(
-                                        p, mm, sc, tag=f"{p.model.name}|test"),
+                        fit = _fit_quality(pair)
+                        # Shuffled-pair control (Sec. 4.2): the destination activations are
+                        # row-shuffled before fitting, so the pair cannot encode a real
+                        # correspondence and *any* acceptance is a false acceptance. This is
+                        # what gives false acceptance an absolute scale rather than only a
+                        # rate against one plausible alternative.
+                        shuf = fit_translator_pair(
+                            tname,
+                            stores[src_key].subset(fwd_i), stores[dst_key].subset(fwd_i),
+                            stores[src_key].subset(rev_i), stores[dst_key].subset(rev_i),
+                            models[src_key].name, models[dst_key].name, base_seed, mf,
+                            shuffle_destination=True,
+                        )
+
+                        # Both splits are measured from the same fitted translators. The
+                        # calibration split sets the eps thresholds; the test split carries
+                        # the result and is re-scored once those thresholds are final.
+                        for split in ("calibration", "test"):
+                            src_probe = probes[src_key][split]
+                            dst_probe = probes[dst_key][split]
+                            sink = cal_records if split == "calibration" else all_records
+                            for mech in mechs[src_key]:
+                                src_sig = sigcache.measure(
+                                    src_probe, mech,
+                                    provisional.c(models[src_key].name, task.name),
+                                    tag=f"{src_key}|{split}")
+                                cand = pair.translate(mech)
+                                shuf_cand = shuf.translate(mech)
+                                for tr in (pair.reverse_independent, pair.reverse_coupled,
+                                           shuf.reverse_independent, shuf.reverse_coupled):
+                                    if tr is not None and hasattr(tr, "anchor_site"):
+                                        tr.anchor_site = mech.site
+                                # The permuted-destination control must be defined *in the
+                                # destination model*: a different head at one of that
+                                # model's own layers. Deriving it from the source mechanism
+                                # would index the destination's layers with a source layer
+                                # number.
+                                ctrl_seed = stable_seed(master, "ctrl", src_key, dst_key,
+                                                        mech.label)
+                                ctrl = _permuted_control(
+                                    models[dst_key], mechs[dst_key], cand, ctrl_seed
                                 )
-                                rec.diagnostics["independent_legs"] = float(ind.get("independent", False))
-                                all_records.append(rec)
+                                for case, candidate, label, back in (
+                                    ("translated", cand, 1, pair),
+                                    ("permuted_destination", ctrl, 0, pair),
+                                    ("shuffled_pair_translator", shuf_cand, 0, shuf),
+                                ):
+                                    rec = measure_path(
+                                        program=task_name, task_name=task.name,
+                                        source_probe=src_probe, dest_probe=dst_probe,
+                                        settings=settings, source_mech=mech,
+                                        source_signature=src_sig,
+                                        candidate=candidate,
+                                        reverse_independent=(
+                                            lambda mm, b=back: b.back(mm, coupled=False)),
+                                        reverse_coupled=(
+                                            lambda mm, b=back: b.back(mm, coupled=True)),
+                                        bounds=provisional, translator=tname, seed=seed,
+                                        case=case, label=label,
+                                        family_key=f"{task_name}|{src_key}->{dst_key}",
+                                        weight_scheme=ws, eta=eta,
+                                        sig_fn=lambda p, mm, sc: sigcache.measure(
+                                            p, mm, sc, tag=f"{p.model.name}|{split}"),
+                                    )
+                                    rec.diagnostics["independent_legs"] = float(
+                                        ind.get("independent", False))
+                                    rec.diagnostics.update(fit)
+                                    sink.append(rec)
                         # Flushed per mapping so a failure late in the six costs one
                         # mapping, not the whole phase.
                         done_groups.add(group)
                         task_reports[task_name] = provenance
-                        _save_partial(cache, args, all_records, done_groups, task_reports)
+                        _save_partial(cache, args, all_records, done_groups, task_reports,
+                                      cal_records)
                     print(f"  [{src_key} -> {dst_key}] {tname}: "
-                          f"{len(all_records)} records so far", flush=True)
+                          f"{len(all_records)} test records so far", flush=True)
+        # ---- self-translation: the positive control the stage otherwise lacks
+        # Without ground truth, "the criterion correctly rejected bad proposals" and "the
+        # criterion rejects everything" produce identical tables. Translating a mechanism
+        # from a model into *itself* is a correspondence that must hold: the identity map
+        # is the right answer and the candidate is the mechanism unchanged. If these are
+        # not retained, the thresholds are broken rather than the translators.
+        if not args.skip_self_translation:
+            self_recs = []
+            for key in matrix:
+                probe = probes[key]["test"]
+                scale = final_provisional.c(models[key].name, task.name)
+                for mech in mechs[key]:
+                    sig = sigcache.measure(probe, mech, scale, tag=f"{key}|test")
+                    rec = measure_path(
+                        program=task_name, task_name=task.name,
+                        source_probe=probe, dest_probe=probe,
+                        settings=settings, source_mech=mech, source_signature=sig,
+                        candidate=mech,
+                        reverse_independent=lambda mm: mm,
+                        reverse_coupled=None,
+                        bounds=final_provisional, translator="identity", seed=0,
+                        case="self_translation", label=1,
+                        family_key=f"{task_name}|{key}->{key}",
+                        weight_scheme=ws, eta=eta,
+                        sig_fn=lambda p, mm, sc: sigcache.measure(
+                            p, mm, sc, tag=f"{p.model.name}|test"),
+                    )
+                    rec.diagnostics["self_translation"] = 1.0
+                    self_recs.append(rec)
+            all_records.extend(self_recs)
+            n_ok = sum(1 for r in self_recs if not r.abstained
+                       and RULES["pairwise_ccc_plus"].accepts(r))
+            print(f"  [self-translation] {n_ok}/{len(self_recs)} identity correspondences "
+                  f"retained by pairwise CCC+", flush=True)
+            _save_partial(cache, args, all_records, done_groups, task_reports, cal_records)
+
         for m in models.values():
             m.free()
         models.clear()
+
+    # ----------------------------------------------------- finalise the bounds
+    # Until now every path was scored against provisional eps thresholds. The labelled
+    # calibration-split paths set the real ones, exactly as Sec. 3.6 requires and as the
+    # controlled stage does. Without this the cycle-aware positive floor never engages
+    # (it needs at least five calibration positives), so the run silently used
+    # controls-only bounds while reporting cycle_aware -- which over-rejects to the point
+    # that every signature rule retains nothing.
+    if not all_records:
+        print("no records produced")
+        return 1
+
+    final_bounds = cal.pooled(bound_mode)
+    if cal_records:
+        for nr in negatives_from(cal_records):
+            cal.add_negative(nr)
+        for pr in positives_from(cal_records):
+            cal.add_positive(pr)
+        cal.mode = bound_mode
+        final_bounds = cal.pooled(bound_mode)
+        print(f"\ncalibration: {cal.summary()}", flush=True)
+        for mode in list(mf.path_of("equivalence_bounds.modes")):
+            b = cal.pooled(mode)
+            flag = ("  [negative cap conflicts with positive floor]"
+                    if any(isinstance(b.provenance.get(c), dict)
+                           and b.provenance[c].get("cap_conflicts_with_floor")
+                           for c in ("shape", "magnitude", "scalar")) else "")
+            print(f"bounds ({mode}): eps_shape={b.eps_shape:.4f} eps_mag={b.eps_mag:.4f} "
+                  f"eps_scalar={b.eps_scalar:.4f} eps_repr={b.eps_representational:.4f}{flag}",
+                  flush=True)
+        # Re-scoring rather than re-measuring: eps only normalises distances that are
+        # already recorded, so the candidates and signatures are untouched.
+        all_records = rescore_with_bounds(
+            all_records, {r.program: final_bounds for r in all_records}
+        )
+    else:
+        print("\n! no calibration-split paths; eps bounds are controls-only", flush=True)
 
     # --------------------------------------------------------------- analysis
     out = mf.out_dir()
     write_json(out / f"natural_paths_{args.stratum}.json",
                {"records": [r.to_dict() for r in all_records],
                 "tasks": task_reports, "matrix": matrix}, mf)
-    if not all_records:
-        print("no records produced")
-        return 1
     rules = [r for r in LADDER if r != "multi_model_ccc_plus"]
     res = analyse(all_records, mf, rules=rules, n_boot=args.boot,
                   seed=int(mf.path_of("seeds.bootstrap")))
@@ -463,7 +635,15 @@ def phase_evaluate(args, mf, matrix, cache: Path) -> int:
                              for k, d in res["per_rule"].items()},
                 "coupling": couple, "signature_agreement": agree,
                 "tasks": task_reports, "matrix": matrix,
-                "bounds": {"mode": bound_mode}}, mf)
+                # The realised thresholds and their provenance, not just the mode name:
+                # positive_floor / negative_cap / cap_conflicts_with_floor are what make
+                # a retention of zero interpretable.
+                "bounds": {"mode": bound_mode, **final_bounds.to_dict()},
+                "bounds_by_mode": {m: cal.pooled(m).to_dict()
+                                   for m in list(mf.path_of("equivalence_bounds.modes"))},
+                "calibration_summary": cal.summary(),
+                "n_calibration_paths": len(cal_records),
+                "translator_fit": _fit_summary(all_records)}, mf)
 
     per_tr: Dict[str, Dict[str, object]] = {}
     for tname in args.translators:
